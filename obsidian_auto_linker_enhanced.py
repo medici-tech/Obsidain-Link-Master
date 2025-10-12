@@ -1,0 +1,898 @@
+#!/usr/bin/env python3
+"""
+Enhanced Obsidian Vault Auto-Linker with Advanced Features
+Processes conversations and creates MOC-based wiki structure
+"""
+
+import os
+import re
+import yaml
+import json
+import shutil
+import hashlib
+import time
+import threading
+from pathlib import Path
+from typing import List, Set, Dict, Tuple, Optional, Any
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
+from tqdm import tqdm
+import fnmatch
+
+# Load config
+try:
+    with open('config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    if config is None:
+        config = {}
+except Exception as e:
+    print(f"Error loading config: {e}")
+    config = {}
+
+VAULT_PATH = config.get('vault_path', '')
+BACKUP_FOLDER = os.path.join(VAULT_PATH, config.get('backup_folder', '_backups'))
+DRY_RUN = config.get('dry_run', True)
+MAX_BACKUPS = config.get('max_backups', 5)
+MAX_SIBLINGS = config.get('max_siblings', 5)
+BATCH_SIZE = config.get('batch_size', 1)
+MAX_RETRIES = config.get('max_retries', 3)
+PARALLEL_WORKERS = config.get('parallel_workers', 1)
+FILE_ORDERING = config.get('file_ordering', 'recent')
+# Cost tracking removed for local LLM (free to use)
+# Budget alert removed for local LLM (free to use)
+RESUME_ENABLED = config.get('resume_enabled', True)
+CACHE_ENABLED = config.get('cache_enabled', True)
+INTERACTIVE_MODE = config.get('interactive_mode', True)
+ANALYTICS_ENABLED = config.get('analytics_enabled', True)
+
+# Ollama configuration
+OLLAMA_BASE_URL = config.get('ollama_base_url', 'http://localhost:11434')
+OLLAMA_MODEL = config.get('ollama_model', 'qwen3:8b')
+OLLAMA_TIMEOUT = config.get('ollama_timeout', 30)
+OLLAMA_MAX_RETRIES = config.get('ollama_max_retries', 3)
+OLLAMA_TEMPERATURE = config.get('ollama_temperature', 0.1)
+OLLAMA_MAX_TOKENS = config.get('ollama_max_tokens', 400)
+
+# Cost tracking disabled for local LLM (free to use)
+
+def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None) -> str:
+    """Call Ollama API with the given prompt and retry logic"""
+    if max_retries is None:
+        max_retries = OLLAMA_MAX_RETRIES
+    
+    for attempt in range(max_retries):
+        try:
+            url = f"{OLLAMA_BASE_URL}/api/generate"
+            
+            # Prepare the full prompt
+            full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+            
+            payload = {
+                "model": OLLAMA_MODEL,
+                "prompt": full_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": OLLAMA_TEMPERATURE,  # From config
+                    "top_p": 0.8,        # Slightly lower top_p
+                    "top_k": 20,          # Limit vocabulary
+                    "repeat_penalty": 1.1, # Prevent repetition
+                    "num_ctx": 2048,     # Smaller context window
+                    "num_predict": OLLAMA_MAX_TOKENS,  # From config
+                    "stop": ["```", "\n\n\n"]  # Stop tokens
+                }
+            }
+            
+            # Increase timeout with each retry (for slow local models)
+            timeout = OLLAMA_TIMEOUT + (attempt * 60)  # Base + 1min per retry
+            response = requests.post(url, json=payload, timeout=timeout)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result.get('response', '').strip()
+            
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                print(f"⏰ Attempt {attempt + 1} timed out ({timeout}s). Local models are slow - retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                continue
+            else:
+                print(f"⏰ All {max_retries} attempts timed out. Local model is very slow (this is normal).")
+                return ""
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                print(f"❌ Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                continue
+            else:
+                print(f"❌ All {max_retries} attempts failed: {e}")
+                return ""
+        except Exception as e:
+            print(f"❌ Unexpected error calling Ollama: {e}")
+            return ""
+    
+    return ""
+
+# Analytics tracking
+analytics = {
+    'start_time': None,
+    'end_time': None,
+    'total_files': 0,
+    'processed_files': 0,
+    'skipped_files': 0,
+    'failed_files': 0,
+    'processing_time': 0,
+    'moc_distribution': {},
+    'error_types': {},
+    'retry_attempts': 0,
+    'cache_hits': 0,
+    'cache_misses': 0
+}
+
+# Progress tracking
+progress_data = {
+    'processed_files': set(),
+    'failed_files': set(),
+    'current_batch': 0,
+    'total_batches': 0,
+    'last_update': None
+}
+
+# Cache for AI responses
+ai_cache = {}
+
+# 12 MOC System (enhanced with custom support)
+MOCS = {
+    "Client Acquisition": "📍 Client Acquisition MOC",
+    "Service Delivery": "📍 Service Delivery MOC",
+    "Revenue & Pricing": "📍 Revenue & Pricing MOC",
+    "Marketing & Content": "📍 Marketing & Content MOC",
+    "Garrison Voice Product": "📍 Garrison Voice Product MOC",
+    "Technical & Automation": "📍 Technical & Automation MOC",
+    "Business Operations": "📍 Business Operations MOC",
+    "Learning & Skills": "📍 Learning & Skills MOC",
+    "Personal Development": "📍 Personal Development MOC",
+    "Health & Fitness": "📍 Health & Fitness MOC",
+    "Finance & Money": "📍 Finance & Money MOC",
+    "Life & Misc": "📍 Life & Misc MOC"
+}
+
+# Add custom MOCs if defined
+if config.get('custom_mocs'):
+    MOCS.update(config['custom_mocs'])
+
+MOC_DESCRIPTIONS = {
+    "Client Acquisition": "Getting customers for Garrison Detail & Garrison Voice",
+    "Service Delivery": "Fulfilling client work and project execution",
+    "Revenue & Pricing": "Making money, pricing strategies, monetization",
+    "Marketing & Content": "Getting attention, content creation, brand building",
+    "Garrison Voice Product": "AI voice product development and features",
+    "Technical & Automation": "Tools, code, AI, n8n, automation systems",
+    "Business Operations": "Running the business day-to-day",
+    "Learning & Skills": "Courses, tutorials, research, skill acquisition",
+    "Personal Development": "Growth, habits, mindset, self-improvement",
+    "Health & Fitness": "Physical health, exercise, nutrition, wellness",
+    "Finance & Money": "Personal finance, investing, budgeting",
+    "Life & Misc": "Everything else that doesn't fit other categories"
+}
+
+def load_progress():
+    """Load progress from file"""
+    if not RESUME_ENABLED:
+        return
+    
+    progress_file = config.get('progress_file', '.processing_progress.json')
+    if os.path.exists(progress_file):
+        try:
+            with open(progress_file, 'r') as f:
+                data = json.load(f)
+                progress_data['processed_files'] = set(data.get('processed_files', []))
+                progress_data['failed_files'] = set(data.get('failed_files', []))
+                progress_data['current_batch'] = data.get('current_batch', 0)
+                print(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
+        except Exception as e:
+            print(f"⚠️  Could not load progress file: {e}")
+
+def save_progress():
+    """Save progress to file"""
+    if not RESUME_ENABLED:
+        return
+    
+    progress_file = config.get('progress_file', '.processing_progress.json')
+    try:
+        with open(progress_file, 'w') as f:
+            json.dump({
+                'processed_files': list(progress_data['processed_files']),
+                'failed_files': list(progress_data['failed_files']),
+                'current_batch': progress_data['current_batch'],
+                'last_update': datetime.now().isoformat()
+            }, indent=2)
+    except Exception as e:
+        print(f"⚠️  Could not save progress: {e}")
+
+def load_cache():
+    """Load AI cache from file"""
+    if not CACHE_ENABLED:
+        return
+    
+    cache_file = config.get('cache_file', '.ai_cache.json')
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r') as f:
+                global ai_cache
+                ai_cache = json.load(f)
+                print(f"💾 Loaded cache: {len(ai_cache)} cached responses")
+        except Exception as e:
+            print(f"⚠️  Could not load cache: {e}")
+
+def save_cache():
+    """Save AI cache to file"""
+    if not CACHE_ENABLED:
+        return
+    
+    cache_file = config.get('cache_file', '.ai_cache.json')
+    try:
+        with open(cache_file, 'w') as f:
+            json.dump(ai_cache, indent=2)
+    except Exception as e:
+        print(f"⚠️  Could not save cache: {e}")
+
+def get_content_hash(content: str) -> str:
+    """Generate hash for content caching"""
+    return hashlib.md5(content.encode()).hexdigest()
+
+def should_process_file(file_path: str) -> bool:
+    """Check if file should be processed based on filters"""
+    filename = os.path.basename(file_path)
+    relative_path = os.path.relpath(file_path, VAULT_PATH)
+    
+    # Check exclude patterns
+    exclude_patterns = config.get('exclude_patterns', [])
+    for pattern in exclude_patterns:
+        if fnmatch.fnmatch(filename, pattern):
+            return False
+    
+    # Check include patterns
+    include_patterns = config.get('include_patterns', [])
+    if include_patterns:
+        if not any(fnmatch.fnmatch(filename, pattern) for pattern in include_patterns):
+            return False
+    
+    # Check folder whitelist
+    folder_whitelist = config.get('folder_whitelist', [])
+    if folder_whitelist:
+        folder = os.path.dirname(relative_path)
+        if not any(folder.startswith(f) for f in folder_whitelist):
+            return False
+    
+    # Check folder blacklist
+    folder_blacklist = config.get('folder_blacklist', [])
+    if folder_blacklist:
+        folder = os.path.dirname(relative_path)
+        if any(folder.startswith(f) for f in folder_blacklist):
+            return False
+    
+    return True
+
+def get_all_notes(vault_path: str) -> Dict[str, str]:
+    """Get all note titles with preview content"""
+    notes = {}
+    for root, dirs, files in os.walk(vault_path):
+        if config['backup_folder'] in root:
+            continue
+        for file in files:
+            if file.endswith('.md') and should_process_file(os.path.join(root, file)):
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        note_title = file[:-3]
+                        notes[note_title] = content[:800]
+                except:
+                    continue
+    return notes
+
+def create_moc_note(moc_name: str, vault_path: str):
+    """Create MOC note if it doesn't exist"""
+    moc_filename = MOCS[moc_name].replace('📍 ', '') + '.md'
+    moc_path = os.path.join(vault_path, moc_filename)
+    
+    if os.path.exists(moc_path):
+        return
+    
+    description = MOC_DESCRIPTIONS.get(moc_name, f"Content related to {moc_name}")
+    
+    content = f"""# {MOCS[moc_name]}
+
+> {description}
+
+## Overview
+
+This is a Map of Content (MOC) that organizes all notes related to {moc_name.lower()}.
+
+## Key Concepts
+
+(Concepts will be added as notes are processed)
+
+## Recent Conversations
+
+(Recent conversations will appear here automatically)
+
+## Related MOCs
+
+(Links to related MOCs will be added here)
+
+---
+
+*This MOC was auto-generated. Add your own structure and notes as needed.*
+"""
+    
+    if not DRY_RUN:
+        with open(moc_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print(f"  ✅ Created MOC: {moc_filename}")
+
+def analyze_with_balanced_ai(content: str, existing_notes: Dict[str, str]) -> Optional[Dict]:
+    """Balanced AI analysis with caching"""
+    
+    # Check cache first
+    content_hash = get_content_hash(content)
+    if content_hash in ai_cache:
+        analytics['cache_hits'] += 1
+        return ai_cache[content_hash]
+    
+    analytics['cache_misses'] += 1
+    
+    # Sample of existing notes for context (reduced for efficiency)
+    note_list = "\n".join([f"- {title}" for title in list(existing_notes.keys())[:50]])
+    
+    # Extract main content (before footer if exists)
+    main_content = re.split(r'\n---\n## 📊 METADATA', content)[0]
+    
+    # Truncate content for faster processing
+    content_sample = main_content[:2000]  # Reduced from 4000
+    
+    prompt = f"""Analyze this Obsidian conversation and provide structured metadata.
+
+EXISTING NOTES (for linking):
+{note_list}
+
+CONTENT:
+{content_sample}
+
+Return JSON with:
+1. "moc_category": One of: Client Acquisition, Service Delivery, Revenue & Pricing, Marketing & Content, Garrison Voice Product, Technical & Automation, Business Operations, Learning & Skills, Personal Development, Health & Fitness, Finance & Money, Life & Misc
+
+2. "primary_topic": Main topic in one sentence
+
+3. "hierarchical_tags": 2-3 tags like "business/acquisition" or "technical/automation"
+
+4. "key_concepts": 3-5 key concepts (1-2 sentences each)
+
+5. "sibling_notes": 2-3 existing note titles that are related (ONLY from the list above)
+
+6. "confidence_score": 0-1 confidence
+
+7. "reasoning": Brief explanation
+
+Return ONLY valid JSON."""
+
+    try:
+        # Call Ollama instead of OpenAI
+        system_prompt = "You analyze conversations and create knowledge connections. Return valid JSON only."
+        result_text = call_ollama(prompt, system_prompt)
+        
+        if not result_text:
+            print("❌ Empty response from Ollama")
+            return None
+        
+        # Clean up potential markdown formatting
+        result_text = result_text.strip()
+        if result_text.startswith('```json'):
+            result_text = result_text[7:]
+        if result_text.startswith('```'):
+            result_text = result_text[3:]
+        if result_text.endswith('```'):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        result = json.loads(result_text)
+        
+        # Cache the result
+        ai_cache[content_hash] = result
+        
+        return result
+        
+    except json.JSONDecodeError as e:
+        print(f"  ⚠️  JSON parse error: {e}")
+        print(f"  Response was: {result_text[:200]}")
+        return None
+    except Exception as e:
+        print(f"  ⚠️  AI analysis failed: {e}")
+        return None
+
+def backup_file(file_path: str):
+    """Create timestamped backup with verification"""
+    os.makedirs(BACKUP_FOLDER, exist_ok=True)
+    
+    filename = os.path.basename(file_path)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_name = f"{filename[:-3]}_{timestamp}.md"
+    backup_path = os.path.join(BACKUP_FOLDER, backup_name)
+    
+    try:
+        shutil.copy2(file_path, backup_path)
+        
+        # Verify backup
+        if config.get('backup_verification', True):
+            with open(file_path, 'r') as original:
+                with open(backup_path, 'r') as backup:
+                    if original.read() != backup.read():
+                        raise Exception("Backup verification failed")
+        
+        # Clean old backups
+        backups = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.startswith(filename[:-3])])
+        if len(backups) > MAX_BACKUPS:
+            for old_backup in backups[:-MAX_BACKUPS]:
+                os.remove(os.path.join(BACKUP_FOLDER, old_backup))
+                
+    except Exception as e:
+        print(f"  ❌ Backup failed: {e}")
+        raise
+
+def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: Dict) -> bool:
+    """Process single conversation file with enhanced error handling"""
+    
+    filename = os.path.basename(file_path)
+    
+    # Check if already processed
+    if file_path in progress_data['processed_files']:
+        stats['already_processed'] += 1
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception as e:
+        print(f"  ❌ Could not read {filename}: {e}")
+        analytics['error_types']['file_read_error'] = analytics['error_types'].get('file_read_error', 0) + 1
+        return False
+    
+    # Check if already processed (has proper structure)
+    if '## 📊 METADATA' in content and '## 🔗 WIKI STRUCTURE' in content:
+        has_parent = re.search(r'Parent: \[\[📍.*MOC\]\]', content)
+        if has_parent:
+            print(f"  ⏭️  Already processed - skipping")
+            stats['already_processed'] += 1
+            progress_data['processed_files'].add(file_path)
+            return False
+    
+    # Analyze with AI
+    print(f"\n📄 {filename}")
+    print("  🤖 Analyzing with balanced AI...")
+    
+    ai_result = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            ai_result = analyze_with_balanced_ai(content, existing_notes)
+            if ai_result:
+                break
+        except Exception as e:
+            print(f"  ⚠️  Attempt {attempt + 1} failed: {e}")
+            analytics['retry_attempts'] += 1
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)  # Exponential backoff
+    
+    if not ai_result:
+        stats['failed'] += 1
+        analytics['error_types']['ai_analysis_failed'] = analytics['error_types'].get('ai_analysis_failed', 0) + 1
+        progress_data['failed_files'].add(file_path)
+        return False
+    
+    confidence = ai_result.get('confidence_score', 0)
+    print(f"  ✓ Confidence: {confidence:.0%}")
+    print(f"  ✓ MOC: {ai_result.get('moc_category')}")
+    print(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
+    
+    # Track MOC distribution
+    moc_category = ai_result.get('moc_category', 'Life & Misc')
+    analytics['moc_distribution'][moc_category] = analytics['moc_distribution'].get(moc_category, 0) + 1
+    
+    # Extract components
+    primary_topic = ai_result.get('primary_topic', 'Unknown')
+    hierarchical_tags = ai_result.get('hierarchical_tags', [])
+    key_concepts = ai_result.get('key_concepts', [])
+    sibling_notes = ai_result.get('sibling_notes', [])
+    
+    # Verify sibling notes exist
+    verified_siblings = []
+    for note in sibling_notes[:MAX_SIBLINGS]:
+        if note in existing_notes:
+            verified_siblings.append(f"[[{note}]]")
+    
+    # Build footer sections
+    parent_moc = MOCS.get(moc_category, MOCS['Life & Misc'])
+    
+    metadata_section = f"""## 📊 METADATA
+
+Primary Topic: {primary_topic}
+Topic Area: {moc_category}
+Confidence: {confidence:.0%}"""
+
+    wiki_section = f"""## 🔗 WIKI STRUCTURE
+
+Parent: [[{parent_moc}]]
+Siblings: {' · '.join(verified_siblings) if verified_siblings else 'None yet'}
+Children: None yet"""
+
+    concepts_section = f"""## 💡 KEY CONCEPTS
+
+{chr(10).join([f'- {concept}' for concept in key_concepts[:8]])}"""
+
+    tags_section = f"""## 🏷️ TAGS
+
+{' '.join([f'#{tag}' for tag in hierarchical_tags[:5]])}"""
+
+    # Extract main content (before any existing footer)
+    main_content = re.split(r'\n---\n## 📊 METADATA', content)[0].strip()
+    
+    # Build new complete content
+    new_content = f"""{main_content}
+
+---
+{metadata_section}
+
+---
+{wiki_section}
+
+---
+{concepts_section}
+
+---
+{tags_section}
+"""
+    
+    # Show results
+    print(f"  🏷️  Tags: {len(hierarchical_tags)}")
+    print(f"  🔗 Siblings: {len(verified_siblings)}")
+    
+    # Backup and write
+    if not DRY_RUN:
+        try:
+            # Create new file instead of overwriting
+            base_name = os.path.splitext(file_path)[0]
+            new_file_path = f"{base_name}_linked.md"
+            
+            # Create backup of original
+            backup_file(file_path)
+            
+            # Write new file
+            with open(new_file_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            
+            stats['processed'] += 1
+            stats['links_added'] += len(verified_siblings)
+            stats['tags_added'] += len(hierarchical_tags)
+            progress_data['processed_files'].add(file_path)
+            
+            print(f"  📄 Created new file: {os.path.basename(new_file_path)}")
+            print("  ✅ File updated")
+        except Exception as e:
+            print(f"  ❌ Failed to update file: {e}")
+            analytics['error_types']['file_write_error'] = analytics['error_types'].get('file_write_error', 0) + 1
+            return False
+    else:
+        stats['would_process'] += 1
+        print("  🔥 DRY RUN - No changes made")
+    
+    return True
+
+def process_batch(files: List[str], existing_notes: Dict[str, str], stats: Dict) -> Dict:
+    """Process a batch of files"""
+    batch_stats = {
+        'processed': 0,
+        'already_processed': 0,
+        'failed': 0,
+        'would_process': 0,
+        'links_added': 0,
+        'tags_added': 0
+    }
+    
+    for file_path in files:
+        if process_conversation(file_path, existing_notes, batch_stats):
+            batch_stats['processed'] += 1
+    
+    return batch_stats
+
+def order_files(files, ordering):
+    """Order files based on the specified ordering method"""
+    if ordering == 'recent':
+        # Sort by modification time (newest first)
+        return sorted(files, key=lambda f: os.path.getmtime(f), reverse=True)
+    elif ordering == 'size':
+        # Sort by file size (largest first)
+        return sorted(files, key=lambda f: os.path.getsize(f), reverse=True)
+    elif ordering == 'random':
+        # Random order
+        import random
+        random.shuffle(files)
+        return files
+    elif ordering == 'alphabetical':
+        # Alphabetical order
+        return sorted(files)
+    else:
+        # Default to original order
+        return files
+
+def show_progress(current_file, stage, processed, total, start_time):
+    """Show progress information"""
+    elapsed = datetime.now() - start_time
+    elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
+    
+    if processed > 0:
+        speed = processed / (elapsed.total_seconds() / 60)  # files per minute
+        remaining = total - processed
+        if speed > 0:
+            eta_minutes = remaining / speed
+            eta_str = f"{eta_minutes:.0f}min" if eta_minutes < 60 else f"{eta_minutes/60:.1f}h"
+        else:
+            eta_str = "∞"
+    else:
+        speed = 0
+        eta_str = "∞"
+    
+    progress_pct = (processed / total * 100) if total > 0 else 0
+    
+    print(f"\r📊 Progress: {processed}/{total} ({progress_pct:.1f}%) | "
+          f"⏱️ {elapsed_str} | 🏃 {speed:.1f}/min | ⏳ {eta_str} | "
+          f"📁 {current_file[:30]}... | 🔄 {stage}", end="", flush=True)
+
+def generate_analytics_report():
+    """Generate comprehensive analytics report"""
+    if not ANALYTICS_ENABLED:
+        return
+    
+    analytics['end_time'] = datetime.now()
+    analytics['processing_time'] = (analytics['end_time'] - analytics['start_time']).total_seconds()
+    
+    # Save analytics
+    analytics_file = config.get('analytics_file', 'processing_analytics.json')
+    with open(analytics_file, 'w') as f:
+        json.dump(analytics, f, indent=2, default=str)
+    
+    # Generate HTML report
+    if config.get('generate_report', True):
+        html_report = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Obsidian Auto-Linker Analytics Report</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; }}
+        .header {{ background: #f0f0f0; padding: 20px; border-radius: 5px; }}
+        .metric {{ margin: 10px 0; }}
+        .chart {{ background: #f9f9f9; padding: 20px; margin: 20px 0; border-radius: 5px; }}
+        .moc-dist {{ display: flex; flex-wrap: wrap; gap: 10px; }}
+        .moc-item {{ background: #e3f2fd; padding: 10px; border-radius: 3px; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Obsidian Auto-Linker Analytics Report</h1>
+        <p>Generated: {analytics['end_time']}</p>
+    </div>
+    
+    <div class="chart">
+        <h2>📈 Processing Summary</h2>
+        <div class="metric"><strong>Total Files:</strong> {analytics['total_files']}</div>
+        <div class="metric"><strong>Processed:</strong> {analytics['processed_files']}</div>
+        <div class="metric"><strong>Skipped:</strong> {analytics['skipped_files']}</div>
+        <div class="metric"><strong>Failed:</strong> {analytics['failed_files']}</div>
+        <div class="metric"><strong>Processing Time:</strong> {analytics['processing_time']:.1f} seconds</div>
+    </div>
+    
+    <div class="chart">
+        <h2>🏷️ MOC Distribution</h2>
+        <div class="moc-dist">
+            {''.join([f'<div class="moc-item">{moc}: {count}</div>' for moc, count in analytics['moc_distribution'].items()])}
+        </div>
+    </div>
+    
+    <div class="chart">
+        <h2>⚡ Performance Metrics</h2>
+        <div class="metric"><strong>Cache Hits:</strong> {analytics['cache_hits']}</div>
+        <div class="metric"><strong>Cache Misses:</strong> {analytics['cache_misses']}</div>
+        <div class="metric"><strong>Retry Attempts:</strong> {analytics['retry_attempts']}</div>
+    </div>
+    
+    <div class="chart">
+        <h2>❌ Error Summary</h2>
+        {''.join([f'<div class="metric"><strong>{error}:</strong> {count}</div>' for error, count in analytics['error_types'].items()])}
+    </div>
+</body>
+</html>
+"""
+        
+        with open('analytics_report.html', 'w') as f:
+            f.write(html_report)
+        
+        print(f"📊 Analytics report saved to: analytics_report.html")
+
+def main():
+    """Enhanced main processing function"""
+    
+    print("=" * 60)
+    print("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
+    print("   Advanced Features with Analytics")
+    print("=" * 60)
+    print()
+    
+    # Initialize analytics
+    analytics['start_time'] = datetime.now()
+    
+    # Load progress and cache
+    load_progress()
+    load_cache()
+    
+    # Initialize stats
+    stats = {
+        'processed': 0,
+        'already_processed': 0,
+        'failed': 0,
+        'would_process': 0,
+        'links_added': 0,
+        'tags_added': 0
+    }
+    
+    # Progress tracking
+    start_time = datetime.now()
+    total_files = len(all_files)
+    processed_count = 0
+    
+    # Test Ollama connection first
+    print("🔍 Testing Ollama connection...")
+    print("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
+    test_response = call_ollama("Hello", "You are a helpful assistant.")
+    if not test_response:
+        print("❌ Ollama connection failed. Please check if Ollama is running and the model is loaded.")
+        print("   Try: ollama serve")
+        print("   Then: ollama pull qwen3:8b")
+        return
+    else:
+        print("✅ Ollama connection successful")
+        print("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
+        print(f"   🤖 Using model: {OLLAMA_MODEL}")
+    
+    # Scan vault
+    print("🔍 Scanning vault...")
+    print(f"   Vault path: {VAULT_PATH}")
+    existing_notes = get_all_notes(VAULT_PATH)
+    print(f"   Found {len(existing_notes)} existing notes")
+    
+    # Create MOC notes if needed
+    print("\n📚 Checking MOC notes...")
+    for moc_name in MOCS.keys():
+        create_moc_note(moc_name, VAULT_PATH)
+    
+    # Find conversation files
+    print("\n🔎 Finding conversation files...")
+    all_files = []
+    for root, dirs, files in os.walk(VAULT_PATH):
+        if config['backup_folder'] in root:
+            continue
+        for file in files:
+            if file.endswith('.md') and not file.startswith(('📍', 'MOC')):
+                file_path = os.path.join(root, file)
+                if should_process_file(file_path):
+                    all_files.append(file_path)
+    
+    # Filter out already processed files
+    if RESUME_ENABLED:
+        all_files = [f for f in all_files if f not in progress_data['processed_files']]
+    
+    # Order files based on configuration
+    print(f"📋 Ordering files by: {FILE_ORDERING}")
+    all_files = order_files(all_files, FILE_ORDERING)
+    
+    print(f"   Found {len(all_files)} markdown files to process")
+    
+    # Estimate processing time for slow local models
+    if len(all_files) > 0:
+        estimated_time_per_file = 2.5  # minutes per file for local models
+        total_estimated_minutes = len(all_files) * estimated_time_per_file
+        total_estimated_hours = total_estimated_minutes / 60
+        
+        if total_estimated_hours >= 1:
+            print(f"   ⏰ Estimated time: {total_estimated_hours:.1f} hours (local models are slow)")
+        else:
+            print(f"   ⏰ Estimated time: {total_estimated_minutes:.0f} minutes (local models are slow)")
+        print("   💡 Tip: You can stop and resume processing anytime")
+    
+    # Interactive mode checks
+    if INTERACTIVE_MODE and not DRY_RUN:
+        if len(all_files) > 100 and config.get('confirm_large_batches', True):
+            try:
+                response = input(f"\n⚠️  Found {len(all_files)} files to process. Continue? (y/N): ")
+                if response.lower() != 'y':
+                    print("❌ Processing cancelled by user")
+                    return
+            except EOFError:
+                # Running in non-interactive mode (like from web GUI)
+                print(f"⚠️  Found {len(all_files)} files to process. Auto-continuing...")
+                pass
+        
+        # Cost tracking removed for local LLM
+    
+    if DRY_RUN:
+        print("\n🔥 DRY RUN MODE - No files will be modified")
+        print("   Set dry_run: false in config.yaml to process for real\n")
+    else:
+        print(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
+        print(f"   Backups stored in: {BACKUP_FOLDER}\n")
+    
+    # Process files one at a time
+    print("📝 Processing files one at a time...\n")
+    
+    analytics['total_files'] = len(all_files)
+    
+    for i, file_path in enumerate(all_files, 1):
+        current_file = os.path.basename(file_path)
+        print(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
+        
+        # Show progress
+        show_progress(current_file, "Processing", processed_count, total_files, start_time)
+        
+        # Process the file
+        if process_conversation(file_path, existing_notes, stats):
+            processed_count += 1
+            show_progress(current_file, "Completed", processed_count, total_files, start_time)
+        else:
+            show_progress(current_file, "Skipped", processed_count, total_files, start_time)
+        
+        # Save progress after each file
+        save_progress()
+        save_cache()
+        
+        # Show file summary
+        print(f"\n📊 File {i} complete:")
+        print(f"   ✅ Processed: {stats['processed']}")
+        print(f"   ⏭️  Skipped: {stats['already_processed']}")
+        print(f"   ❌ Failed: {stats['failed']}")
+        print(f"   🔗 Links added: {stats['links_added']}")
+        print(f"   🏷️  Tags added: {stats['tags_added']}")
+    
+    # Update analytics
+    analytics['processed_files'] = stats['processed']
+    analytics['skipped_files'] = stats['already_processed']
+    analytics['failed_files'] = stats['failed']
+    
+    # Final report
+    print("\n" + "=" * 60)
+    print("✅ PROCESSING COMPLETE")
+    print("=" * 60)
+    if DRY_RUN:
+        print(f"📊 Would process: {stats['would_process']} files")
+    else:
+        print(f"📊 Processed: {stats['processed']} files")
+        print(f"📄 New files created: {stats['processed']} (with '_linked' suffix)")
+        print(f"🔗 Links added: {stats['links_added']}")
+        print(f"🏷️  Tags added: {stats['tags_added']}")
+    print(f"⏭️  Already processed: {stats['already_processed']}")
+    print(f"❌ Failed: {stats['failed']}")
+    # Cost tracking removed for local LLM
+    print()
+    
+    # Generate analytics report
+    generate_analytics_report()
+    
+    if DRY_RUN:
+        print("💡 Set dry_run: false in config.yaml to process for real")
+    else:
+        print(f"💾 Backups saved to: {BACKUP_FOLDER}")
+    
+    print("=" * 60)
+
+if __name__ == "__main__":
+    main()
