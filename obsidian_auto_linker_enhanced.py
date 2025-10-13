@@ -33,6 +33,7 @@ except Exception as e:
 VAULT_PATH = config.get('vault_path', '')
 BACKUP_FOLDER = os.path.join(VAULT_PATH, config.get('backup_folder', '_backups'))
 DRY_RUN = config.get('dry_run', True)
+FAST_DRY_RUN = config.get('fast_dry_run', False)
 MAX_BACKUPS = config.get('max_backups', 5)
 MAX_SIBLINGS = config.get('max_siblings', 5)
 BATCH_SIZE = config.get('batch_size', 1)
@@ -188,10 +189,19 @@ def load_progress():
         try:
             with open(progress_file, 'r') as f:
                 data = json.load(f)
-                progress_data['processed_files'] = set(data.get('processed_files', []))
-                progress_data['failed_files'] = set(data.get('failed_files', []))
-                progress_data['current_batch'] = data.get('current_batch', 0)
-                print(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
+                if data and isinstance(data, dict):
+                    progress_data['processed_files'] = set(data.get('processed_files', []))
+                    progress_data['failed_files'] = set(data.get('failed_files', []))
+                    progress_data['current_batch'] = data.get('current_batch', 0)
+                    print(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
+                else:
+                    progress_data['processed_files'] = set()
+                    progress_data['failed_files'] = set()
+                    progress_data['current_batch'] = 0
+        except (json.JSONDecodeError, ValueError):
+            progress_data['processed_files'] = set()
+            progress_data['failed_files'] = set()
+            progress_data['current_batch'] = 0
         except Exception as e:
             print(f"⚠️  Could not load progress file: {e}")
 
@@ -208,7 +218,7 @@ def save_progress():
                 'failed_files': list(progress_data['failed_files']),
                 'current_batch': progress_data['current_batch'],
                 'last_update': datetime.now().isoformat()
-            }, indent=2)
+            }, f, indent=2)
     except Exception as e:
         print(f"⚠️  Could not save progress: {e}")
 
@@ -222,10 +232,18 @@ def load_cache():
         try:
             with open(cache_file, 'r') as f:
                 global ai_cache
-                ai_cache = json.load(f)
-                print(f"💾 Loaded cache: {len(ai_cache)} cached responses")
+                data = json.load(f)
+                if data and isinstance(data, dict):
+                    ai_cache = data
+                else:
+                    ai_cache = {}
+        except (json.JSONDecodeError, ValueError):
+            ai_cache = {}
         except Exception as e:
             print(f"⚠️  Could not load cache: {e}")
+        
+        if ai_cache:
+            print(f"💾 Loaded cache: {len(ai_cache)} cached responses")
 
 def save_cache():
     """Save AI cache to file"""
@@ -235,7 +253,7 @@ def save_cache():
     cache_file = config.get('cache_file', '.ai_cache.json')
     try:
         with open(cache_file, 'w') as f:
-            json.dump(ai_cache, indent=2)
+            json.dump(ai_cache, f, indent=2)
     except Exception as e:
         print(f"⚠️  Could not save cache: {e}")
 
@@ -280,7 +298,7 @@ def get_all_notes(vault_path: str) -> Dict[str, str]:
     """Get all note titles with preview content"""
     notes = {}
     for root, dirs, files in os.walk(vault_path):
-        if config['backup_folder'] in root:
+        if config.get('backup_folder', '_backups') in root:
             continue
         for file in files:
             if file.endswith('.md') and should_process_file(os.path.join(root, file)):
@@ -333,6 +351,51 @@ This is a Map of Content (MOC) that organizes all notes related to {moc_name.low
         with open(moc_path, 'w', encoding='utf-8') as f:
             f.write(content)
         print(f"  ✅ Created MOC: {moc_filename}")
+
+def fast_dry_run_analysis(content: str, file_path: str) -> Dict[str, Any]:
+    """Fast dry run analysis without AI - just basic structure analysis"""
+    # Extract basic file info
+    filename = os.path.basename(file_path)
+    file_size = len(content)
+    word_count = len(content.split())
+    
+    # Simple keyword extraction (no AI)
+    words = content.lower().split()
+    word_freq = {}
+    for word in words:
+        if len(word) > 3:  # Only words longer than 3 chars
+            word_freq[word] = word_freq.get(word, 0) + 1
+    
+    # Get top keywords
+    top_keywords = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:10]
+    
+    # Simple category detection based on keywords
+    categories = []
+    if any(word in content.lower() for word in ['work', 'job', 'career', 'business', 'meeting']):
+        categories.append('Work & Career')
+    if any(word in content.lower() for word in ['learn', 'study', 'education', 'course', 'book']):
+        categories.append('Learning & Education')
+    if any(word in content.lower() for word in ['health', 'fitness', 'exercise', 'diet', 'medical']):
+        categories.append('Health & Fitness')
+    if any(word in content.lower() for word in ['money', 'finance', 'budget', 'invest', 'expense']):
+        categories.append('Finance & Money')
+    if any(word in content.lower() for word in ['project', 'idea', 'plan', 'goal', 'task']):
+        categories.append('Projects & Ideas')
+    if any(word in content.lower() for word in ['personal', 'life', 'family', 'friend', 'relationship']):
+        categories.append('Personal & Life')
+    
+    if not categories:
+        categories = ['Life & Misc']
+    
+    return {
+        'filename': filename,
+        'file_size': file_size,
+        'word_count': word_count,
+        'top_keywords': [word for word, freq in top_keywords],
+        'categories': categories,
+        'analysis_type': 'fast_dry_run',
+        'timestamp': datetime.now().isoformat()
+    }
 
 def analyze_with_balanced_ai(content: str, existing_notes: Dict[str, str]) -> Optional[Dict]:
     """Balanced AI analysis with caching"""
@@ -469,21 +532,25 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
             progress_data['processed_files'].add(file_path)
             return False
     
-    # Analyze with AI
+    # Analyze with AI or Fast Dry Run
     print(f"\n📄 {filename}")
-    print("  🤖 Analyzing with balanced AI...")
     
-    ai_result = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            ai_result = analyze_with_balanced_ai(content, existing_notes)
-            if ai_result:
-                break
-        except Exception as e:
-            print(f"  ⚠️  Attempt {attempt + 1} failed: {e}")
-            analytics['retry_attempts'] += 1
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(2 ** attempt)  # Exponential backoff
+    if FAST_DRY_RUN:
+        print("  ⚡ Fast analysis (no AI)...")
+        ai_result = fast_dry_run_analysis(content, file_path)
+    else:
+        print("  🤖 Analyzing with balanced AI...")
+        ai_result = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                ai_result = analyze_with_balanced_ai(content, existing_notes)
+                if ai_result:
+                    break
+            except Exception as e:
+                print(f"  ⚠️  Attempt {attempt + 1} failed: {e}")
+                analytics['retry_attempts'] += 1
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)  # Exponential backoff
     
     if not ai_result:
         stats['failed'] += 1
@@ -725,7 +792,12 @@ def main():
     
     print("=" * 60)
     print("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
-    print("   Advanced Features with Analytics")
+    if FAST_DRY_RUN:
+        print("   ⚡ FAST DRY RUN MODE - No AI Analysis")
+    elif DRY_RUN:
+        print("   🔍 DRY RUN MODE - Full AI Analysis")
+    else:
+        print("   🚀 LIVE MODE - Processing Files")
     print("=" * 60)
     print()
     
@@ -748,7 +820,6 @@ def main():
     
     # Progress tracking
     start_time = datetime.now()
-    total_files = len(all_files)
     processed_count = 0
     
     # Test Ollama connection first
@@ -780,7 +851,7 @@ def main():
     print("\n🔎 Finding conversation files...")
     all_files = []
     for root, dirs, files in os.walk(VAULT_PATH):
-        if config['backup_folder'] in root:
+        if config.get('backup_folder', '_backups') in root:
             continue
         for file in files:
             if file.endswith('.md') and not file.startswith(('📍', 'MOC')):
@@ -797,6 +868,9 @@ def main():
     all_files = order_files(all_files, FILE_ORDERING)
     
     print(f"   Found {len(all_files)} markdown files to process")
+    
+    # Set total files for progress tracking
+    total_files = len(all_files)
     
     # Estimate processing time for slow local models
     if len(all_files) > 0:
