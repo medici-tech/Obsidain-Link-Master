@@ -425,22 +425,20 @@ EXISTING NOTES (for linking):
 CONTENT:
 {content_sample}
 
-Return JSON with:
-1. "moc_category": One of: Client Acquisition, Service Delivery, Revenue & Pricing, Marketing & Content, Garrison Voice Product, Technical & Automation, Business Operations, Learning & Skills, Personal Development, Health & Fitness, Finance & Money, Life & Misc
+Return ONLY valid JSON in this exact format:
+{{
+  "moc_category": "Life & Misc",
+  "primary_topic": "Brief topic description",
+  "hierarchical_tags": ["tag1", "tag2"],
+  "key_concepts": ["concept1", "concept2", "concept3"],
+  "sibling_notes": ["note1", "note2"],
+  "confidence_score": 0.8,
+  "reasoning": "Brief explanation"
+}}
 
-2. "primary_topic": Main topic in one sentence
+Categories: Client Acquisition, Service Delivery, Revenue & Pricing, Marketing & Content, Garrison Voice Product, Technical & Automation, Business Operations, Learning & Skills, Personal Development, Health & Fitness, Finance & Money, Life & Misc
 
-3. "hierarchical_tags": 2-3 tags like "business/acquisition" or "technical/automation"
-
-4. "key_concepts": 3-5 key concepts (1-2 sentences each)
-
-5. "sibling_notes": 2-3 existing note titles that are related (ONLY from the list above)
-
-6. "confidence_score": 0-1 confidence
-
-7. "reasoning": Brief explanation
-
-Return ONLY valid JSON."""
+Return ONLY the JSON object, no explanations or other text."""
 
     try:
         # Call Ollama instead of OpenAI
@@ -461,17 +459,31 @@ Return ONLY valid JSON."""
             result_text = result_text[:-3]
         result_text = result_text.strip()
         
-        result = json.loads(result_text)
+        # Try to parse JSON with better error handling
+        try:
+            result = json.loads(result_text)
+        except json.JSONDecodeError as e:
+            print(f"  ⚠️  JSON parse error: {e}")
+            print(f"  Response was: {result_text[:200]}")
+            
+            # Try to extract JSON from the response if it's wrapped in text
+            import re
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                try:
+                    result = json.loads(json_match.group())
+                    print(f"  ✅ Extracted JSON from response")
+                except json.JSONDecodeError:
+                    print(f"  ❌ Could not extract valid JSON")
+                    return None
+            else:
+                print(f"  ❌ No JSON found in response")
+                return None
         
         # Cache the result
         ai_cache[content_hash] = result
         
         return result
-        
-    except json.JSONDecodeError as e:
-        print(f"  ⚠️  JSON parse error: {e}")
-        print(f"  Response was: {result_text[:200]}")
-        return None
     except Exception as e:
         print(f"  ⚠️  AI analysis failed: {e}")
         return None
