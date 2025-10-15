@@ -253,7 +253,7 @@ dry_run: {dry_run}
 fast_dry_run: {fast_dry_run}
 file_ordering: '{file_ordering}'
 ollama_base_url: http://localhost:11434
-ollama_model: goekdenizguelmez/JOSIEFIED-Qwen3:latest
+ollama_model: qwen2.5:3b
 vault_path: {vault_path}
 """
         

@@ -6,7 +6,7 @@ Processes conversations and creates MOC-based wiki structure
 
 import os
 import re
-import yaml
+import yaml  # pyright: ignore[reportMissingModuleSource]
 import json
 import shutil
 import hashlib
@@ -49,11 +49,11 @@ ANALYTICS_ENABLED = config.get('analytics_enabled', True)
 
 # Ollama configuration
 OLLAMA_BASE_URL = config.get('ollama_base_url', 'http://localhost:11434')
-OLLAMA_MODEL = config.get('ollama_model', 'qwen3:8b')
-OLLAMA_TIMEOUT = config.get('ollama_timeout', 30)
-OLLAMA_MAX_RETRIES = config.get('ollama_max_retries', 3)
+OLLAMA_MODEL = config.get('ollama_model', 'qwen3:8b')  # Default to Qwen3:8b for maximum accuracy
+OLLAMA_TIMEOUT = config.get('ollama_timeout', 300)  # Default 5 minutes for Qwen3:8b
+OLLAMA_MAX_RETRIES = config.get('ollama_max_retries', 5)  # More retries for complex reasoning
 OLLAMA_TEMPERATURE = config.get('ollama_temperature', 0.1)
-OLLAMA_MAX_TOKENS = config.get('ollama_max_tokens', 400)
+OLLAMA_MAX_TOKENS = config.get('ollama_max_tokens', 1024)  # More tokens for detailed responses
 
 # Cost tracking disabled for local LLM (free to use)
 
@@ -84,8 +84,8 @@ def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None) -
                 }
             }
             
-            # Increase timeout with each retry (for slow local models)
-            timeout = OLLAMA_TIMEOUT + (attempt * 60)  # Base + 1min per retry
+            # Increase timeout with each retry (for complex reasoning)
+            timeout = OLLAMA_TIMEOUT + (attempt * 180)  # Base + 3min per retry for Qwen3:8b reasoning
             response = requests.post(url, json=payload, timeout=timeout)
             response.raise_for_status()
             
@@ -95,7 +95,7 @@ def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None) -
         except requests.exceptions.Timeout:
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                print(f"⏰ Attempt {attempt + 1} timed out ({timeout}s). Local models are slow - retrying in {wait_time}s...")
+                print(f"⏰ Attempt {attempt + 1} timed out ({timeout}s). Qwen3:8b needs time for complex reasoning - retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 continue
             else:
@@ -467,7 +467,6 @@ Return ONLY the JSON object, no explanations or other text."""
             print(f"  Response was: {result_text[:200]}")
             
             # Try to extract JSON from the response if it's wrapped in text
-            import re
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
             if json_match:
                 try:
@@ -690,7 +689,13 @@ def order_files(files, ordering):
     if ordering == 'recent':
         # Sort by modification time (newest first)
         return sorted(files, key=lambda f: os.path.getmtime(f), reverse=True)
-    elif ordering == 'size':
+    elif ordering == 'oldest':
+        # Sort by modification time (oldest first)
+        return sorted(files, key=lambda f: os.path.getmtime(f), reverse=False)
+    elif ordering == 'smallest':
+        # Sort by file size (smallest first) - perfect for testing!
+        return sorted(files, key=lambda f: os.path.getsize(f), reverse=False)
+    elif ordering == 'largest':
         # Sort by file size (largest first)
         return sorted(files, key=lambda f: os.path.getsize(f), reverse=True)
     elif ordering == 'random':
@@ -801,6 +806,8 @@ def generate_analytics_report():
 
 def main():
     """Enhanced main processing function"""
+    # Declare global variables for interactive mode
+    global DRY_RUN, BATCH_SIZE, OLLAMA_MODEL, FILE_ORDERING
     
     print("=" * 60)
     print("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
@@ -847,6 +854,10 @@ def main():
         print("✅ Ollama connection successful")
         print("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
         print(f"   🤖 Using model: {OLLAMA_MODEL}")
+        print(f"   ⏱️  Base timeout: {OLLAMA_TIMEOUT}s (extended for complex reasoning)")
+        print(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
+        print(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
+        print(f"   🧠 Extended timeouts prevent reasoning interruptions")
     
     # Scan vault
     print("🔍 Scanning vault...")
@@ -897,17 +908,107 @@ def main():
         print("   💡 Tip: You can stop and resume processing anytime")
     
     # Interactive mode checks
-    if INTERACTIVE_MODE and not DRY_RUN:
-        if len(all_files) > 100 and config.get('confirm_large_batches', True):
-            try:
-                response = input(f"\n⚠️  Found {len(all_files)} files to process. Continue? (y/N): ")
-                if response.lower() != 'y':
-                    print("❌ Processing cancelled by user")
+    if INTERACTIVE_MODE:
+        try:
+            print("\n" + "=" * 60)
+            print("🎛️  INTERACTIVE CONFIGURATION")
+            print("=" * 60)
+            
+            # Ask for run type
+            print(f"\n📊 Found {len(all_files)} files to process")
+            print("\n🔧 Configuration Options:")
+            print("1. 🧪 Dry Run (safe - no changes)")
+            print("2. 🚀 Real Processing (modifies files)")
+            print("3. 📝 Custom Settings")
+            print("4. 🐣 Start with Smallest Files (quick test)")
+            print("5. ❌ Cancel")
+            
+            choice = input("\nChoose option (1-5): ").strip()
+            
+            if choice == "1":
+                print("✅ Selected: Dry Run Mode")
+                # Keep dry_run = True
+            elif choice == "2":
+                print("✅ Selected: Real Processing Mode")
+                print("⚠️  WARNING: This will modify your files!")
+                confirm = input("Are you sure? Type 'YES' to continue: ")
+                if confirm != "YES":
+                    print("❌ Real processing cancelled")
                     return
-            except EOFError:
-                # Running in non-interactive mode (like from web GUI)
-                print(f"⚠️  Found {len(all_files)} files to process. Auto-continuing...")
-                pass
+                # Set dry_run = False
+                DRY_RUN = False
+            elif choice == "3":
+                print("\n🔧 Custom Settings:")
+                
+                # Batch size
+                batch_input = input(f"Batch size (current: {BATCH_SIZE}): ").strip()
+                if batch_input:
+                    try:
+                        BATCH_SIZE = int(batch_input)
+                        print(f"✅ Batch size set to: {BATCH_SIZE}")
+                    except ValueError:
+                        print("⚠️  Invalid batch size, keeping current")
+                
+                # Model selection
+                print(f"\nCurrent model: {OLLAMA_MODEL}")
+                print("Available models: qwen3:8b, qwen2.5:3b")
+                model_input = input("Model (press Enter to keep current): ").strip()
+                if model_input in ["qwen3:8b", "qwen2.5:3b"]:
+                    OLLAMA_MODEL = model_input
+                    print(f"✅ Model set to: {OLLAMA_MODEL}")
+                elif model_input:
+                    print("⚠️  Invalid model, keeping current")
+                
+                # File ordering
+                print(f"\nCurrent file ordering: {FILE_ORDERING}")
+                print("Available options: recent, oldest, smallest, largest, random, alphabetical")
+                order_input = input("File ordering (press Enter to keep current): ").strip()
+                if order_input in ["recent", "oldest", "smallest", "largest", "random", "alphabetical"]:
+                    FILE_ORDERING = order_input
+                    print(f"✅ File ordering set to: {FILE_ORDERING}")
+                elif order_input:
+                    print("⚠️  Invalid ordering, keeping current")
+                
+                # Run type
+                run_type = input("\nRun type (dry/real): ").strip().lower()
+                if run_type == "real":
+                    print("⚠️  WARNING: Real processing will modify files!")
+                    confirm = input("Are you sure? Type 'YES' to continue: ")
+                    if confirm == "YES":
+                        DRY_RUN = False
+                        print("✅ Real processing enabled")
+                    else:
+                        print("✅ Keeping dry run mode")
+                else:
+                    print("✅ Dry run mode confirmed")
+                    
+            elif choice == "4":
+                print("✅ Selected: Start with Smallest Files")
+                print("🐣 Perfect for quick testing!")
+                FILE_ORDERING = "smallest"
+                print(f"✅ File ordering set to: {FILE_ORDERING}")
+            elif choice == "5":
+                print("❌ Processing cancelled by user")
+                return
+            else:
+                print("⚠️  Invalid choice, using default settings")
+            
+            # Final confirmation
+            print(f"\n📋 Final Configuration:")
+            print(f"   🤖 Model: {OLLAMA_MODEL}")
+            print(f"   📦 Batch size: {BATCH_SIZE}")
+            print(f"   🧪 Mode: {'Dry Run' if DRY_RUN else 'Real Processing'}")
+            print(f"   📁 Files: {len(all_files)}")
+            
+            final_confirm = input("\nProceed with these settings? (y/N): ")
+            if final_confirm.lower() != 'y':
+                print("❌ Processing cancelled by user")
+                return
+                
+        except EOFError:
+            # Running in non-interactive mode (like from web GUI)
+            print(f"⚠️  Auto-continuing with default settings...")
+            pass
         
         # Cost tracking removed for local LLM
     
@@ -972,6 +1073,23 @@ def main():
     
     # Generate analytics report
     generate_analytics_report()
+    
+    # Generate ultra detailed analytics with before/after files and reasoning
+    try:
+        print("\n🚀 Generating ultra detailed analytics...")
+        print("📊 Including before/after files and AI reasoning analysis...")
+        import subprocess
+        result = subprocess.run(['python3', 'ultra_detailed_analytics.py'], 
+                              capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            print("✅ Ultra detailed analytics generated!")
+            print("🌐 Ultra detailed report will open automatically in your browser")
+        else:
+            print("⚠️ Ultra detailed analytics failed, using standard report")
+            print(f"Error: {result.stderr}")
+    except Exception as e:
+        print(f"⚠️ Ultra detailed analytics failed: {e}")
+        print("📊 Using standard analytics report")
     
     if DRY_RUN:
         print("💡 Set dry_run: false in config.yaml to process for real")

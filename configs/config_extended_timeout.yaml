@@ -3,7 +3,7 @@
 
 # Core settings
 vault_path: /Users/medici/Documents/MediciVault
-dry_run: true
+dry_run: false
 fast_dry_run: false
 
 # Analytics and reporting

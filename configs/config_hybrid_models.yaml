@@ -1,0 +1,81 @@
+# Hybrid Model Configuration for MacBook Air 2025 16GB
+# Uses both Qwen3:8b and Qwen2.5:3b strategically
+
+# Core settings
+vault_path: /Users/medici/Documents/MediciVault
+dry_run: false  # Set to true for testing, false for real processing
+fast_dry_run: false  # Use full AI analysis for detailed categorization
+
+# Analytics and reporting
+analytics_enabled: true
+generate_report: true
+detailed_analytics: true
+comprehensive_reporting: true
+auto_open_report: true
+
+# Hybrid Model Strategy
+use_hybrid_models: true
+primary_model: "qwen3:8b"  # Use 8B model for complex categorization
+secondary_model: "qwen2.5:3b"  # Use 3B model for simple/quick tasks
+model_switching_threshold: 1000  # Switch to 3B for files under 1000 words
+
+# Processing settings optimized for 16GB RAM
+batch_size: 1  # Process one file at a time for memory efficiency
+parallel_workers: 1  # Sequential processing to manage memory
+max_retries: 3
+ollama_max_retries: 3
+
+# Primary Model Settings (Qwen3:8b) - For complex analysis
+primary_ollama_base_url: http://localhost:11434
+primary_ollama_model: qwen3:8b
+primary_ollama_temperature: 0.1
+primary_ollama_max_tokens: 2048  # Higher tokens for 8B model
+primary_ollama_context_window: 16384  # Larger context for 8B model
+primary_ollama_timeout: 120  # Longer timeout for 8B model
+
+# Secondary Model Settings (Qwen2.5:3b) - For quick tasks
+secondary_ollama_base_url: http://localhost:11434
+secondary_ollama_model: qwen2.5:3b
+secondary_ollama_temperature: 0.1
+secondary_ollama_max_tokens: 1024  # Moderate tokens for 3B model
+secondary_ollama_context_window: 8192  # Moderate context for 3B model
+secondary_ollama_timeout: 60  # Shorter timeout for 3B model
+
+# File processing
+file_ordering: 'recent'  # Process newest files first
+resume_enabled: true
+cache_enabled: true
+
+# Memory management for 16GB MacBook Air
+memory_optimization: true
+model_switching_strategy: "intelligent"  # intelligent, size-based, or manual
+max_memory_usage: 12  # GB - leave 4GB for system
+auto_switch_models: true
+
+# Detailed tracking
+track_processing_time: true
+track_confidence_scores: true
+track_reasoning: true
+track_file_sizes: true
+track_word_counts: true
+track_categorization_accuracy: true
+track_model_usage: true  # Track which model was used for each file
+
+# Enhanced reporting
+include_file_details: true
+include_processing_metrics: true
+include_performance_stats: true
+include_error_analysis: true
+include_moc_distribution: true
+include_confidence_analysis: true
+include_time_analysis: true
+include_content_analysis: true
+include_model_usage_stats: true  # Show which model performed better
+
+# Report settings
+report_format: 'html'
+include_charts: true
+include_timeline: true
+include_breakdown: true
+include_recommendations: true
+include_model_comparison: true  # Compare performance between models
