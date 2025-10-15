@@ -47,6 +47,15 @@ CACHE_ENABLED = config.get('cache_enabled', True)
 INTERACTIVE_MODE = config.get('interactive_mode', True)
 ANALYTICS_ENABLED = config.get('analytics_enabled', True)
 
+# Quality control settings
+CONFIDENCE_THRESHOLD = config.get('confidence_threshold', 0.8)
+ENABLE_REVIEW_QUEUE = config.get('enable_review_queue', True)
+REVIEW_QUEUE_PATH = config.get('review_queue_path', 'reviews/')
+
+# Dry run settings
+DRY_RUN_LIMIT = config.get('dry_run_limit', 10)
+DRY_RUN_INTERACTIVE = config.get('dry_run_interactive', True)
+
 # Ollama configuration
 OLLAMA_BASE_URL = config.get('ollama_base_url', 'http://localhost:11434')
 OLLAMA_MODEL = config.get('ollama_model', 'qwen3:8b')  # Default to Qwen3:8b for maximum accuracy
@@ -516,6 +525,64 @@ def backup_file(file_path: str):
         print(f"  ❌ Backup failed: {e}")
         raise
 
+def add_to_review_queue(file_path: str, ai_result: Dict[str, Any], confidence: float):
+    """Add low confidence file to review queue"""
+    if not ENABLE_REVIEW_QUEUE:
+        return
+    
+    # Create review queue directory
+    if not os.path.exists(REVIEW_QUEUE_PATH):
+        os.makedirs(REVIEW_QUEUE_PATH)
+    
+    filename = os.path.basename(file_path)
+    review_filename = f"REVIEW_{filename}"
+    review_path = os.path.join(REVIEW_QUEUE_PATH, review_filename)
+    
+    # Create review file with analysis details
+    review_content = f"""# 🔍 REVIEW REQUIRED: {filename}
+
+## ⚠️ Low Confidence Analysis
+**Confidence Score:** {confidence:.1%} (below {CONFIDENCE_THRESHOLD:.1%} threshold)
+**Original File:** {file_path}
+**Review Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## 🤖 AI Analysis Results
+**MOC Category:** {ai_result.get('moc_category', 'Unknown')}
+**Primary Topic:** {ai_result.get('primary_topic', 'Unknown')}
+**Confidence:** {confidence:.1%}
+**Reasoning:** {ai_result.get('reasoning', 'No reasoning provided')}
+
+## 🏷️ Suggested Tags
+{chr(10).join([f'- {tag}' for tag in ai_result.get('hierarchical_tags', [])])}
+
+## 🔗 Suggested Siblings
+{chr(10).join([f'- {note}' for note in ai_result.get('sibling_notes', [])])}
+
+## 💡 Key Concepts
+{chr(10).join([f'- {concept}' for concept in ai_result.get('key_concepts', [])])}
+
+## 📝 Manual Review Required
+Please review the AI analysis above and determine if the categorization is correct.
+You may need to:
+1. Adjust the MOC category
+2. Modify the tags
+3. Update the sibling links
+4. Correct the key concepts
+
+## ✅ After Review
+Once you've reviewed and corrected the analysis, you can:
+1. Move this file back to the main processing queue
+2. Update the confidence score manually
+3. Process the file with the corrected metadata
+"""
+    
+    try:
+        with open(review_path, 'w', encoding='utf-8') as f:
+            f.write(review_content)
+        print(f"  📝 Review file created: {review_filename}")
+    except Exception as e:
+        print(f"  ❌ Failed to create review file: {e}")
+
 def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: Dict) -> bool:
     """Process single conversation file with enhanced error handling"""
     
@@ -573,6 +640,20 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     print(f"  ✓ Confidence: {confidence:.0%}")
     print(f"  ✓ MOC: {ai_result.get('moc_category')}")
     print(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
+    
+    # Check confidence threshold
+    if confidence < CONFIDENCE_THRESHOLD:
+        print(f"  ⚠️  LOW CONFIDENCE: {confidence:.0%} < {CONFIDENCE_THRESHOLD:.0%} threshold")
+        print(f"  📋 Flagging for manual review...")
+        
+        # Add to review queue
+        if ENABLE_REVIEW_QUEUE:
+            add_to_review_queue(file_path, ai_result, confidence)
+            analytics['review_queue_count'] = analytics.get('review_queue_count', 0) + 1
+            print(f"  📝 Added to review queue: {REVIEW_QUEUE_PATH}")
+        
+        # Track low confidence files
+        analytics['low_confidence_files'] = analytics.get('low_confidence_files', 0) + 1
     
     # Track MOC distribution
     moc_category = ai_result.get('moc_category', 'Life & Misc')
@@ -775,6 +856,8 @@ def generate_analytics_report():
         <div class="metric"><strong>Skipped:</strong> {analytics['skipped_files']}</div>
         <div class="metric"><strong>Failed:</strong> {analytics['failed_files']}</div>
         <div class="metric"><strong>Processing Time:</strong> {analytics['processing_time']:.1f} seconds</div>
+        <div class="metric"><strong>Low Confidence Files:</strong> {analytics.get('low_confidence_files', 0)}</div>
+        <div class="metric"><strong>Review Queue:</strong> {analytics.get('review_queue_count', 0)} files flagged for manual review</div>
     </div>
     
     <div class="chart">
@@ -1014,6 +1097,7 @@ def main():
     
     if DRY_RUN:
         print("\n🔥 DRY RUN MODE - No files will be modified")
+        print(f"   📊 Limited to first {DRY_RUN_LIMIT} files for analysis")
         print("   Set dry_run: false in config.yaml to process for real\n")
     else:
         print(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
@@ -1027,6 +1111,57 @@ def main():
     for i, file_path in enumerate(all_files, 1):
         current_file = os.path.basename(file_path)
         print(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
+        
+        # Check dry run limit
+        if DRY_RUN and i > DRY_RUN_LIMIT:
+            print(f"\n🛑 DRY RUN LIMIT REACHED ({DRY_RUN_LIMIT} files)")
+            print("=" * 60)
+            print("📊 DRY RUN SUMMARY")
+            print("=" * 60)
+            print(f"✅ Files analyzed: {i-1}")
+            print(f"📊 Would process: {stats['would_process']}")
+            print(f"⏭️  Already processed: {stats['already_processed']}")
+            print(f"❌ Failed: {stats['failed']}")
+            print(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)}")
+            print(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files")
+            print(f"⏱️  Time elapsed: {datetime.now() - start_time}")
+            
+            if DRY_RUN_INTERACTIVE:
+                print(f"\n🎛️  What would you like to do next?")
+                print("1. 🚀 Start REAL processing (modify files)")
+                print("2. 🔍 Continue dry run (analyze more files)")
+                print("3. 📊 Generate analytics report and exit")
+                print("4. ❌ Stop processing")
+                
+                try:
+                    choice = input("\nChoose option (1-4): ").strip()
+                    
+                    if choice == "1":
+                        print("⚠️  SWITCHING TO REAL PROCESSING")
+                        print("   This will modify your files!")
+                        confirm = input("Are you sure? Type 'YES' to continue: ")
+                        if confirm == "YES":
+                            DRY_RUN = False
+                            print("✅ Real processing enabled - continuing with remaining files...")
+                        else:
+                            print("❌ Real processing cancelled")
+                            break
+                    elif choice == "2":
+                        print("✅ Continuing dry run...")
+                        # Continue with dry run (no change needed)
+                    elif choice == "3":
+                        print("📊 Generating analytics report...")
+                        break
+                    elif choice == "4":
+                        print("❌ Processing stopped by user")
+                        break
+                    else:
+                        print("⚠️  Invalid choice, continuing dry run...")
+                except EOFError:
+                    print("⚠️  Non-interactive mode, continuing dry run...")
+            else:
+                print("📊 Dry run limit reached - generating analytics report...")
+                break
         
         # Show progress
         show_progress(current_file, "Processing", processed_count, total_files, start_time)
@@ -1068,6 +1203,8 @@ def main():
         print(f"🏷️  Tags added: {stats['tags_added']}")
     print(f"⏭️  Already processed: {stats['already_processed']}")
     print(f"❌ Failed: {stats['failed']}")
+    print(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)} (below {CONFIDENCE_THRESHOLD:.0%} threshold)")
+    print(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files flagged for manual review")
     # Cost tracking removed for local LLM
     print()
     
