@@ -846,7 +846,7 @@ def generate_analytics_report() -> None:
 
         logger.info(f"📊 Analytics report saved to: analytics_report.html")
 
-def main(enable_dashboard: bool = False, dashboard_update_interval: int = 30) -> None:
+def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
     """Enhanced main processing function"""
     global dashboard
 

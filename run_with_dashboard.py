@@ -27,7 +27,7 @@ dashboard = None
 class EnhancedRunner:
     """Enhanced runner with live dashboard integration"""
 
-    def __init__(self, update_interval: int = 30):
+    def __init__(self, update_interval: int = 15):
         global logger, dashboard
 
         self.update_interval = update_interval
@@ -305,7 +305,7 @@ class EnhancedRunner:
 
 if __name__ == "__main__":
     try:
-        runner = EnhancedRunner(update_interval=30)
+        runner = EnhancedRunner(update_interval=15)
         runner.main()
     except Exception as e:
         console.print(f"\n[bold red]Fatal error: {e}[/bold red]")
