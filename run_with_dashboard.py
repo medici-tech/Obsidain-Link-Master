@@ -234,49 +234,19 @@ class EnhancedRunner:
             logger.error(f"Failed to import processor: {e}")
             return
 
-        # Start dashboard
-        dashboard.start()
-        self.running = True
-
-        # Count files
-        vault_path = Path(self.config['vault_path'])
-        all_files = list(vault_path.rglob("*.md"))
-        total_files = len([f for f in all_files if not f.name.startswith('.')])
-
-        dashboard.update_processing(
-            total_files=total_files,
-            processed_files=0,
-            failed_files=0,
-            current_file='Initializing...',
-            current_stage='Starting'
-        )
-
-        # Run with Live display
+        # Run processor with dashboard enabled
         try:
-            with Live(dashboard.render(), refresh_per_second=1.0/self.update_interval, screen=True) as live:
-                logger.info(f"Processing {total_files} files from {vault_path}")
-
-                # This is where we would integrate with the actual processing
-                # For now, we'll simulate the processing
-                # In the real implementation, we'd call the processor functions
-                # and update the dashboard as we go
-
-                # TODO: Integrate with actual obsidian_auto_linker_enhanced.py
-                console.print("\n[yellow]⚠️  Dashboard is ready, but full integration with processing engine is pending[/yellow]")
-                console.print("[yellow]This would require refactoring obsidian_auto_linker_enhanced.py to use the dashboard[/yellow]\n")
-
-                # For now, just show the live dashboard
-                while self.running:
-                    time.sleep(self.update_interval)
-                    live.update(dashboard.render())
+            console.print("\n[bold green]✅ Starting processing with live dashboard...[/bold green]\n")
+            processor.main(enable_dashboard=True, dashboard_update_interval=self.update_interval)
 
         except KeyboardInterrupt:
             self.signal_handler(None, None)
         except Exception as e:
             logger.error(f"Error during processing: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.running = False
-            dashboard.stop()
 
     def main(self):
         """Main entry point"""
