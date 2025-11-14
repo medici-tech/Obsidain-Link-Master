@@ -216,7 +216,7 @@ MOC_DESCRIPTIONS = {
     "Life & Misc": "Everything else that doesn't fit other categories"
 }
 
-def load_progress():
+def load_progress() -> None:
     """Load progress from file"""
     if not RESUME_ENABLED:
         return
@@ -242,7 +242,7 @@ def load_progress():
         except Exception as e:
             logger.warning(f"⚠️  Could not load progress file: {e}")
 
-def save_progress():
+def save_progress() -> None:
     """Save progress to file"""
     if not RESUME_ENABLED:
         return
@@ -259,7 +259,7 @@ def save_progress():
     except Exception as e:
         logger.warning(f"⚠️  Could not save progress: {e}")
 
-def load_cache():
+def load_cache() -> None:
     """Load AI cache from file"""
     if not CACHE_ENABLED:
         return
@@ -287,7 +287,7 @@ def load_cache():
                 cache_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
                 dashboard.update_cache_stats(cache_size_mb, len(ai_cache))
 
-def save_cache():
+def save_cache() -> None:
     """Save AI cache to file"""
     if not CACHE_ENABLED:
         return
@@ -355,7 +355,7 @@ def get_all_notes(vault_path: str) -> Dict[str, str]:
                     continue
     return notes
 
-def create_moc_note(moc_name: str, vault_path: str):
+def create_moc_note(moc_name: str, vault_path: str) -> None:
     """Create MOC note if it doesn't exist"""
     moc_filename = MOCS[moc_name].replace('📍 ', '') + '.md'
     moc_path = os.path.join(vault_path, moc_filename)
@@ -538,7 +538,7 @@ Return ONLY the JSON object, no explanations or other text."""
         logger.warning(f"  ⚠️  AI analysis failed: {e}")
         return None
 
-def backup_file(file_path: str):
+def backup_file(file_path: str) -> None:
     """Create timestamped backup with verification"""
     os.makedirs(BACKUP_FOLDER, exist_ok=True)
     
@@ -756,7 +756,7 @@ def process_batch(files: List[str], existing_notes: Dict[str, str], stats: Dict)
     
     return batch_stats
 
-def order_files(files, ordering):
+def order_files(files: List[str], ordering: str) -> List[str]:
     """Order files based on the specified ordering method"""
     if ordering == 'recent':
         # Sort by modification time (newest first)
@@ -776,7 +776,7 @@ def order_files(files, ordering):
         # Default to original order
         return files
 
-def show_progress(current_file, stage, processed, total, start_time):
+def show_progress(current_file: str, stage: str, processed: int, total: int, start_time: datetime) -> None:
     """Show progress information"""
     elapsed = datetime.now() - start_time
     elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
@@ -799,7 +799,7 @@ def show_progress(current_file, stage, processed, total, start_time):
           f"⏱️ {elapsed_str} | 🏃 {speed:.1f}/min | ⏳ {eta_str} | "
           f"📁 {current_file[:30]}... | 🔄 {stage}", end="", flush=True)
 
-def generate_analytics_report():
+def generate_analytics_report() -> None:
     """Generate comprehensive analytics report"""
     if not ANALYTICS_ENABLED:
         return
@@ -870,7 +870,7 @@ def generate_analytics_report():
 
         logger.info(f"📊 Analytics report saved to: analytics_report.html")
 
-def main(enable_dashboard: bool = False, dashboard_update_interval: int = 30):
+def main(enable_dashboard: bool = False, dashboard_update_interval: int = 30) -> None:
     """Enhanced main processing function"""
     global dashboard
 
