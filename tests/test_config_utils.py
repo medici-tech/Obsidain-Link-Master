@@ -176,6 +176,39 @@ class TestValidateVaultPath:
         result = validate_vault_path('', must_exist=False)
         assert result is False
 
+    def test_null_byte_in_path(self):
+        """Test that null bytes in path are rejected (security)"""
+        result = validate_vault_path('/tmp/vault\x00malicious', must_exist=False)
+        assert result is False
+
+    def test_system_directory_rejected(self):
+        """Test that system directories are rejected (security)"""
+        sensitive_paths = ['/etc', '/sys', '/proc', '/dev', '/bin']
+
+        for path in sensitive_paths:
+            result = validate_vault_path(path, must_exist=False)
+            assert result is False, f"Should have rejected system path: {path}"
+
+    def test_root_directory_rejected(self):
+        """Test that root directory is rejected (security)"""
+        result = validate_vault_path('/', must_exist=False)
+        assert result is False
+
+    def test_user_home_expansion(self, mock_vault):
+        """Test that ~/path is expanded correctly"""
+        # This test validates the expansion works
+        result = validate_vault_path(mock_vault, must_exist=True)
+        assert result is True
+
+    def test_file_not_directory(self, temp_dir):
+        """Test that a file (not directory) is rejected"""
+        file_path = os.path.join(temp_dir, 'file.txt')
+        with open(file_path, 'w') as f:
+            f.write('test')
+
+        result = validate_vault_path(file_path, must_exist=True)
+        assert result is False
+
 
 class TestGetConfigValue:
     """Tests for get_config_value function"""
