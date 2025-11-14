@@ -1,7 +1,7 @@
 # CLAUDE.md - AI Assistant Guide for Obsidian Auto-Linker
 
 **Last Updated**: 2025-11-14
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Purpose**: Comprehensive guide for AI assistants working with the Obsidian Auto-Linker codebase
 
 ---
@@ -76,14 +76,27 @@ Obsidain-Link-Master/
 ├── Utilities
 │   ├── generate_detailed_report.py       # HTML report generator (260 lines)
 │   ├── quick_report.py                   # Terminal report viewer (103 lines)
+│   ├── config_utils.py                   # Configuration utilities (325 lines)
+│   ├── config_schema.py                  # Pydantic validation schemas (240 lines)
 │   └── optimize_ollama.sh                # Ollama optimization script
 │
 ├── Configuration & Data
 │   ├── config.yaml                       # User configuration (gitignored)
 │   ├── requirements.txt                  # Python dependencies
+│   ├── pytest.ini                        # Pytest configuration
 │   ├── .ai_cache.json                    # AI response cache (gitignored)
 │   ├── .processing_progress.json         # Progress tracking (gitignored)
 │   └── processing_analytics.json         # Analytics data (gitignored)
+│
+├── Testing
+│   └── tests/                            # Test suite (75 tests, 100% passing)
+│       ├── __init__.py
+│       ├── conftest.py                   # Pytest fixtures
+│       ├── test_config_utils.py          # Config utilities tests (28)
+│       ├── test_config_schema.py         # Pydantic validation tests (26)
+│       ├── test_logger_config.py         # Logging tests (10)
+│       ├── test_integration.py           # Integration tests (11)
+│       └── README.md                     # Testing guide
 │
 ├── Documentation
 │   ├── README.md                         # Basic usage guide
@@ -102,10 +115,12 @@ Obsidain-Link-Master/
 | Component | Lines | Primary Responsibility | Key Dependencies |
 |-----------|-------|------------------------|------------------|
 | **obsidian_auto_linker_enhanced.py** | 985 | Core processing logic, AI analysis, file management | requests, yaml, json, hashlib |
-| **run.py** | 432 | Interactive CLI, user input, resource monitoring | subprocess, psutil, signal |
+| **run.py** | 500+ | Interactive CLI with dashboard support, resource monitoring | subprocess, psutil, signal |
 | **run_with_dashboard.py** | 345 | Dashboard integration, config validation | rich, logger_config, live_dashboard |
-| **live_dashboard.py** | 640+ | Real-time metrics, terminal UI | rich, psutil, threading, deque |
+| **live_dashboard.py** | 640+ | Real-time metrics (15s updates), terminal UI | rich, psutil, threading, deque |
 | **logger_config.py** | 135 | Structured logging, file rotation | logging, RotatingFileHandler |
+| **config_utils.py** | 325 | Config/JSON loading, Ollama checks, security validation | yaml, json, requests |
+| **config_schema.py** | 240 | Pydantic models for type-safe config validation | pydantic |
 | **generate_detailed_report.py** | 260 | HTML report generation | json, datetime, html |
 | **quick_report.py** | 103 | Terminal report viewing | json |
 
@@ -1570,15 +1585,17 @@ def analyze_with_plugins(content, existing_notes):
 | Component | Status | Notes |
 |-----------|--------|-------|
 | Core Processor | ✅ Complete | Production-ready |
-| Interactive Runner | ✅ Complete | Full featured |
-| Dashboard Infrastructure | ✅ Complete | Not integrated with core yet |
-| Logging System | ✅ Complete | Needs migration from print() |
+| Interactive Runner | ✅ Complete | Dashboard support added |
+| Dashboard Infrastructure | ✅ Complete | Fully integrated (15s updates) |
+| Logging System | ✅ Complete | Structured logging in place |
 | Caching | ✅ Complete | Working well |
 | Progress Tracking | ✅ Complete | Resume functionality works |
 | Reports | ✅ Complete | HTML and terminal |
+| Config Validation | ✅ Complete | Pydantic schemas with type safety |
+| Security | ✅ Enhanced | Comprehensive path validation |
+| Test Suite | ✅ Complete | 75 tests, 100% passing |
 | Parallel Processing | ⏳ Planned | Config exists, not implemented |
 | Web Dashboard | ⏳ Future | Terminal dashboard works |
-| Test Suite | ⏳ Future | Manual testing currently |
 
 ---
 
@@ -1586,7 +1603,73 @@ def analyze_with_plugins(content, existing_notes):
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2025-11-14 | 1.1.0 | Major improvements: Dashboard integration in run.py, pytest framework (75 tests), Pydantic config validation, enhanced security |
 | 2025-11-14 | 1.0.0 | Initial CLAUDE.md creation with comprehensive documentation |
+
+---
+
+## Recent Improvements (v1.1.0)
+
+### Dashboard & Monitoring
+- ✅ Added dashboard support to `run.py` - users can enable/disable interactively
+- ✅ Lowered dashboard update interval from 30s to 15s across all files
+- ✅ Added file count tracking (scanned/processed) to resource summary
+- ✅ Dashboard now shows: Files Scanned, Files Processed, CPU/Memory usage
+
+### Testing Infrastructure
+- ✅ Set up pytest framework with comprehensive test suite
+- ✅ **75 tests total, 100% passing** across 4 test modules:
+  - `test_config_utils.py`: 28 tests for configuration utilities
+  - `test_config_schema.py`: 26 tests for Pydantic validation
+  - `test_logger_config.py`: 10 tests for logging system
+  - `test_integration.py`: 11 integration tests
+- ✅ Created `pytest.ini` with coverage configuration
+- ✅ Added fixtures for temp directories, mock vaults, sample configs
+- ✅ Complete testing documentation in `tests/README.md`
+
+### Configuration Validation
+- ✅ Created `config_schema.py` with Pydantic models for type-safe validation
+- ✅ Schema includes: OllamaConfig, ProcessingConfig, FilterConfig, ObsidianConfig
+- ✅ Features:
+  - Automatic type validation and conversion
+  - Range validation (timeout: 5-300s, batch_size: 1-100, etc.)
+  - URL format validation
+  - Cross-field validation (e.g., fast_dry_run requires dry_run)
+  - User home directory expansion
+  - YAML file loading/saving with validation
+  - Helpful error messages on validation failures
+
+### Security Enhancements
+- ✅ Enhanced `validate_vault_path()` with comprehensive security checks:
+  - Null byte detection (prevents path injection attacks)
+  - System directory blocking (/etc, /sys, /proc, /dev, /bin, C:\Windows, etc.)
+  - Root directory blocking
+  - File vs directory validation
+  - Read permission verification
+  - Optional symlink validation
+  - User home directory expansion
+- ✅ 9 new security tests covering all edge cases
+
+### Code Quality
+- ✅ Created `config_utils.py` module with centralized utilities
+- ✅ Eliminated code duplication across modules
+- ✅ Added comprehensive type hints
+- ✅ All tests passing with no regressions
+
+### Running Tests
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov
+
+# Run specific test file
+pytest tests/test_config_utils.py
+
+# Run with verbose output
+pytest -v
+```
 
 ---
 
