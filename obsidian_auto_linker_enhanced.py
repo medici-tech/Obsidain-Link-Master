@@ -23,20 +23,21 @@ import fnmatch
 # Import logging and dashboard
 from logger_config import get_logger, setup_logging
 from live_dashboard import LiveDashboard
+from config_utils import (
+    load_yaml_config,
+    check_ollama_connection,
+    load_json_file,
+    save_json_file,
+    validate_vault_path,
+    get_file_size_kb,
+    get_file_size_category
+)
 
 # Initialize logger
 logger = get_logger(__name__)
 
-# Load config
-try:
-    with open('config.yaml', 'r') as f:
-        config = yaml.safe_load(f)
-    if config is None:
-        config = {}
-        logger.warning("Config file is empty, using defaults")
-except Exception as e:
-    logger.error(f"Error loading config: {e}")
-    config = {}
+# Load config using utility function
+config = load_yaml_config('config.yaml')
 
 VAULT_PATH = config.get('vault_path', '')
 BACKUP_FOLDER = os.path.join(VAULT_PATH, config.get('backup_folder', '_backups'))
@@ -217,87 +218,62 @@ MOC_DESCRIPTIONS = {
 }
 
 def load_progress() -> None:
-    """Load progress from file"""
+    """Load progress from file using config_utils"""
     if not RESUME_ENABLED:
         return
-    
+
     progress_file = config.get('progress_file', '.processing_progress.json')
-    if os.path.exists(progress_file):
-        try:
-            with open(progress_file, 'r') as f:
-                data = json.load(f)
-                if data and isinstance(data, dict):
-                    progress_data['processed_files'] = set(data.get('processed_files', []))
-                    progress_data['failed_files'] = set(data.get('failed_files', []))
-                    progress_data['current_batch'] = data.get('current_batch', 0)
-                    logger.info(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
-                else:
-                    progress_data['processed_files'] = set()
-                    progress_data['failed_files'] = set()
-                    progress_data['current_batch'] = 0
-        except (json.JSONDecodeError, ValueError):
-            progress_data['processed_files'] = set()
-            progress_data['failed_files'] = set()
-            progress_data['current_batch'] = 0
-        except Exception as e:
-            logger.warning(f"⚠️  Could not load progress file: {e}")
+    data = load_json_file(progress_file, default={})
+
+    if data and isinstance(data, dict):
+        progress_data['processed_files'] = set(data.get('processed_files', []))
+        progress_data['failed_files'] = set(data.get('failed_files', []))
+        progress_data['current_batch'] = data.get('current_batch', 0)
+        if progress_data['processed_files']:
+            logger.info(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
+    else:
+        progress_data['processed_files'] = set()
+        progress_data['failed_files'] = set()
+        progress_data['current_batch'] = 0
 
 def save_progress() -> None:
-    """Save progress to file"""
+    """Save progress to file using config_utils"""
     if not RESUME_ENABLED:
         return
-    
+
     progress_file = config.get('progress_file', '.processing_progress.json')
-    try:
-        with open(progress_file, 'w') as f:
-            json.dump({
-                'processed_files': list(progress_data['processed_files']),
-                'failed_files': list(progress_data['failed_files']),
-                'current_batch': progress_data['current_batch'],
-                'last_update': datetime.now().isoformat()
-            }, f, indent=2)
-    except Exception as e:
-        logger.warning(f"⚠️  Could not save progress: {e}")
+    data = {
+        'processed_files': list(progress_data['processed_files']),
+        'failed_files': list(progress_data['failed_files']),
+        'current_batch': progress_data['current_batch'],
+        'last_update': datetime.now().isoformat()
+    }
+    save_json_file(progress_file, data)
 
 def load_cache() -> None:
-    """Load AI cache from file"""
+    """Load AI cache from file using config_utils"""
     if not CACHE_ENABLED:
         return
-    
+
+    global ai_cache
     cache_file = config.get('cache_file', '.ai_cache.json')
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, 'r') as f:
-                global ai_cache
-                data = json.load(f)
-                if data and isinstance(data, dict):
-                    ai_cache = data
-                else:
-                    ai_cache = {}
-        except (json.JSONDecodeError, ValueError):
-            ai_cache = {}
-        except Exception as e:
-            logger.warning(f"⚠️  Could not load cache: {e}")
+    ai_cache = load_json_file(cache_file, default={})
 
-        if ai_cache:
-            logger.info(f"💾 Loaded cache: {len(ai_cache)} cached responses")
+    if ai_cache:
+        logger.info(f"💾 Loaded cache: {len(ai_cache)} cached responses")
 
-            # Update dashboard with cache stats
-            if dashboard:
-                cache_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
-                dashboard.update_cache_stats(cache_size_mb, len(ai_cache))
+        # Update dashboard with cache stats
+        if dashboard and os.path.exists(cache_file):
+            cache_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
+            dashboard.update_cache_stats(cache_size_mb, len(ai_cache))
 
 def save_cache() -> None:
-    """Save AI cache to file"""
+    """Save AI cache to file using config_utils"""
     if not CACHE_ENABLED:
         return
-    
+
     cache_file = config.get('cache_file', '.ai_cache.json')
-    try:
-        with open(cache_file, 'w') as f:
-            json.dump(ai_cache, f, indent=2)
-    except Exception as e:
-        logger.warning(f"⚠️  Could not save cache: {e}")
+    save_json_file(cache_file, ai_cache)
 
 def get_content_hash(content: str) -> str:
     """Generate hash for content caching"""
