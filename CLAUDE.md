@@ -1,7 +1,7 @@
 # CLAUDE.md - AI Assistant Guide for Obsidian Auto-Linker
 
 **Last Updated**: 2025-11-14
-**Version**: 1.0.0
+**Version**: 2.0.0 - Enhanced Edition
 **Purpose**: Comprehensive guide for AI assistants working with the Obsidian Auto-Linker codebase
 
 ---
@@ -18,6 +18,7 @@
 8. [Testing & Debugging](#8-testing--debugging)
 9. [Important Gotchas](#9-important-gotchas)
 10. [Extension Points](#10-extension-points)
+11. [Development Roadmap](#11-development-roadmap)
 
 ---
 
@@ -87,9 +88,10 @@ Obsidain-Link-Master/
 │
 ├── Documentation
 │   ├── README.md                         # Basic usage guide
-│   ├── README_ENHANCED.md                # Comprehensive documentation
-│   ├── IMPLEMENTATION_SUMMARY.md         # Implementation details
-│   └── CLAUDE.md                         # This file
+│   ├── README_ENHANCED.md                # Comprehensive documentation (450+ lines)
+│   ├── IMPLEMENTATION_SUMMARY.md         # Implementation details (600+ lines)
+│   ├── ROADMAP.md                        # Development roadmap & feature priorities (978 lines)
+│   └── CLAUDE.md                         # This file (AI assistant guide)
 │
 └── Generated Files (Ignored)
     ├── obsidian_linker.log               # Rotating log file
@@ -1527,6 +1529,232 @@ def analyze_with_plugins(content, existing_notes):
 
 ---
 
+## 11. Development Roadmap
+
+### 11.1 Roadmap Overview
+
+The complete development roadmap is maintained in **ROADMAP.md** (978 lines). This section provides a quick summary for AI assistants.
+
+**Current Version**: v2.0 (Enhanced Edition)
+**Status**: Phase 1 Complete - Dashboard & Infrastructure Ready
+**Next Phase**: Phase 2 - Core Integration & Performance
+
+### 11.2 Development Phases
+
+#### **Phase 1: Infrastructure** ✅ COMPLETE (2025-11-14)
+- [x] Live terminal dashboard with Rich library
+- [x] M4-optimized resource monitoring
+- [x] Structured logging system with file rotation
+- [x] Configuration validation
+- [x] Enhanced runner with interactive setup
+- [x] Comprehensive documentation
+
+**Deliverables**:
+- `live_dashboard.py` (640+ lines)
+- `logger_config.py` (135 lines)
+- `run_with_dashboard.py` (345 lines)
+- `README_ENHANCED.md` (450+ lines)
+- `IMPLEMENTATION_SUMMARY.md` (600+ lines)
+- `ROADMAP.md` (978 lines)
+
+---
+
+#### **Phase 2: Core Integration & Performance** ⏳ IN PROGRESS (Weeks 1-2)
+
+**Priority 1: Critical Features**
+
+1. **Parallel Processing** (4-6 hours)
+   - Status: 🔴 Not Started
+   - Impact: 300% performance improvement
+   - Use ThreadPoolExecutor with `parallel_workers` config
+   - Leverage M4's 4 P-cores
+
+2. **Cache Size Limits** (2-3 hours)
+   - Status: 🔴 Not Started
+   - Impact: Prevents memory leaks on large vaults
+   - Implement LRU eviction strategy
+   - Add `max_cache_size_mb` config
+
+3. **Smart File Filtering** (2 hours)
+   - Status: 🔴 Not Started
+   - Impact: 50% fewer files to process
+   - Add `skip_patterns`, `min_file_size_kb` configs
+   - Support date-based filtering
+
+4. **Full Dashboard Integration** (6-8 hours)
+   - Status: 🔴 Not Started
+   - Impact: Real-time monitoring during processing
+   - Replace print() with logger calls
+   - Feed real metrics to dashboard
+
+---
+
+#### **Phase 3: Polish & UX Improvements** (Week 3)
+
+5. **Link Quality Scoring** (4 hours)
+   - Calculate similarity scores for links
+   - Filter low-quality links
+   - Add quality metrics to dashboard
+
+6. **Enhanced Resume System** (3-4 hours)
+   - Track sub-stages per file
+   - Resume from exact failure point
+   - Store attempt count and errors
+
+7. **Incremental Processing** (3 hours)
+   - Track file content hashes
+   - Skip unchanged files
+   - 90% faster on subsequent runs
+
+8. **Export Dashboard Metrics** (2 hours)
+   - Export to CSV/JSON
+   - Historical run comparison
+   - Performance tracking
+
+---
+
+#### **Phase 4: Advanced Features** (Week 4)
+
+9. **Alert Thresholds** (2 hours)
+   - Monitor CPU, memory, error rates
+   - Visual alerts in dashboard
+   - Log alerts to file
+
+10. **Webhook Notifications** (2 hours)
+    - Notify on completion/errors
+    - IFTTT/Zapier integration
+    - Milestone notifications
+
+11. **Undo/Rollback System** (4 hours)
+    - Track all modifications
+    - Rollback last run or specific files
+    - Verify integrity before rollback
+
+---
+
+#### **Phase 5: Testing & Quality** (Ongoing)
+
+12. **Comprehensive Test Suite** (8-12 hours)
+    - Pytest framework
+    - Unit tests for all functions
+    - Integration tests
+    - 80%+ code coverage
+    - CI/CD pipeline (GitHub Actions)
+
+13. **Type Hints & mypy** (4 hours)
+    - Add type hints to all functions
+    - Set up mypy configuration
+    - Fix all mypy errors
+
+14. **Performance Profiling** (3 hours)
+    - cProfile integration
+    - Identify bottlenecks
+    - Optimization recommendations
+
+---
+
+#### **Phase 6: Ecosystem Integration** (Future)
+
+15. **Web Dashboard** (12-16 hours)
+    - Flask/FastAPI + WebSockets
+    - Chart.js/Plotly visualizations
+    - Mobile-friendly responsive design
+
+16. **Obsidian Plugin** (20+ hours)
+    - Native Obsidian integration
+    - Command palette integration
+    - Settings tab in Obsidian
+
+17. **Cloud Sync Support** (8-12 hours)
+    - iCloud/Dropbox integration
+    - Sync conflict handling
+    - Multi-device workflow
+
+---
+
+### 11.3 Recommended Configuration (M4 Optimized)
+
+Complete config is in ROADMAP.md. Key settings:
+
+```yaml
+# Performance (M4)
+parallel_workers: 4          # Use P-cores
+max_cache_size_mb: 1000      # You have 16GB RAM
+dashboard_update_interval: 30 # Battery optimized
+
+# File Processing
+skip_patterns:
+  - "templates/"
+  - "archive/"
+  - "_linked.md"
+min_file_size_kb: 0.5
+incremental: true
+
+# Ollama
+ollama_model: qwen2.5:3b     # Fast on M4
+ollama_timeout: 30
+ollama_max_retries: 3
+```
+
+---
+
+### 11.4 Success Metrics
+
+**Performance Targets**:
+- [ ] Parallel processing 3x faster
+- [x] Dashboard overhead < 5% CPU ✓
+- [ ] Cache hit rate > 30%
+- [ ] AI success rate > 95%
+- [ ] Memory usage < 2GB
+
+**Quality Targets**:
+- [x] Zero crashes on normal operation ✓
+- [ ] Test coverage > 80%
+- [ ] Type hints coverage 100%
+- [ ] Zero mypy errors
+- [x] All features documented ✓
+
+**UX Targets**:
+- [x] Setup time < 2 minutes ✓
+- [x] Dashboard updates every 30s ✓
+- [ ] Accurate ETA within 15%
+- [x] Graceful shutdown < 5s ✓
+- [x] Clear error messages ✓
+
+---
+
+### 11.5 Quick Priority Reference
+
+**Must Have (Implement First)**:
+1. ✅ Parallel Processing (biggest impact)
+2. ✅ Cache Limits (stability)
+3. ✅ Smart Filtering (efficiency)
+4. ✅ Full Dashboard Integration (complete Phase 1)
+
+**Should Have (Next)**:
+5. Link Quality Scoring
+6. Enhanced Resume System
+7. Incremental Processing
+8. Comprehensive Testing
+
+**Nice to Have (Later)**:
+9. Web Dashboard
+10. Obsidian Plugin
+11. Cloud Sync
+
+---
+
+### 11.6 Version Planning
+
+- **v2.0** ✅ Current - Enhanced Edition with Live Dashboard
+- **v2.1** → Week 2 - Parallel + Cache + Filtering
+- **v2.2** → Week 4 - Quality + Incremental + Tests
+- **v3.0** → Month 2 - Web Dashboard + Plugin + ML
+
+For complete roadmap details, see: **[ROADMAP.md](ROADMAP.md)**
+
+---
+
 ## Summary for AI Assistants
 
 ### Quick Reference Card
@@ -1586,6 +1814,7 @@ def analyze_with_plugins(content, existing_notes):
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2025-11-14 | 2.0.0 | Updated with Enhanced Edition features: live dashboard, logging system, roadmap integration |
 | 2025-11-14 | 1.0.0 | Initial CLAUDE.md creation with comprehensive documentation |
 
 ---
@@ -1593,3 +1822,12 @@ def analyze_with_plugins(content, existing_notes):
 **End of CLAUDE.md**
 
 *This file is maintained for AI assistants working with the Obsidian Auto-Linker codebase. Keep it updated as the codebase evolves.*
+
+---
+
+## Quick Links for AI Assistants
+
+- **Full Roadmap**: [ROADMAP.md](ROADMAP.md) - 978 lines, all planned features
+- **Implementation Details**: [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) - Recent changes
+- **User Guide**: [README_ENHANCED.md](README_ENHANCED.md) - End-user documentation
+- **Basic README**: [README.md](README.md) - Quick start guide
