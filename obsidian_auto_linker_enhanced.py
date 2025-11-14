@@ -350,7 +350,8 @@ def get_all_notes(vault_path: str) -> Dict[str, str]:
                         content = f.read()
                         note_title = file[:-3]
                         notes[note_title] = content[:800]
-                except:
+                except (UnicodeDecodeError, IOError, OSError) as e:
+                    logger.debug(f"Could not read {file}: {e}")
                     continue
     return notes
 

@@ -127,7 +127,10 @@ class EnhancedRunner:
         try:
             with open('config.yaml', 'r') as f:
                 existing_config = yaml.safe_load(f) or {}
-        except:
+        except FileNotFoundError:
+            existing_config = {}
+        except (yaml.YAMLError, IOError) as e:
+            logger.warning(f"Error loading config: {e}")
             existing_config = {}
 
         # Vault path

@@ -278,8 +278,11 @@ vault_path: {vault_path}
             else:
                 print("❌ Ollama not responding")
                 return False
-        except:
-            print("❌ Ollama not running")
+        except (requests.exceptions.RequestException, ConnectionError) as e:
+            print(f"❌ Ollama not running: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Unexpected error checking Ollama: {e}")
             return False
     
     def run_processing(self):
