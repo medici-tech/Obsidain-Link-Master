@@ -10,3 +10,7 @@ rich>=13.0.0
 # Optional dependencies for enhanced functionality
 pathlib2>=2.3.7; python_version < "3.4"
 typing-extensions>=4.0.0; python_version < "3.8"
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
