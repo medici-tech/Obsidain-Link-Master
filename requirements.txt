@@ -1,3 +1,10 @@
+# Enhanced Obsidian Auto-Linker Dependencies
+# Core dependencies for AI-powered Obsidian vault processing
+
+# YAML configuration parsing
+PyYAML>=6.0
+
+# HTTP requests for Ollama API
 # Obsidian Auto-Linker Dependencies
 # Core dependencies for AI-powered Obsidian vault processing
 
@@ -5,6 +12,9 @@
 requests>=2.32.0
 pyyaml>=6.0
 tqdm>=4.67.0
+rich>=13.0.0
+
+# System monitoring and process management
 psutil>=7.1.0
 rich>=13.0.0
 
@@ -32,5 +42,6 @@ ruamel.yaml>=0.17.0
 watchdog>=3.0.0
 
 # Development dependencies (optional)
+# pytest>=7.0.0
 # black>=23.0.0
 # flake8>=6.0.0

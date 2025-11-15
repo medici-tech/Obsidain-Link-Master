@@ -35,19 +35,19 @@ class ObsidianAutoLinker:
             'files_scanned': 0
         }
         self.monitor_thread = None
-        
+
     def signal_handler(self, signum, frame):
         """Handle Ctrl+C gracefully"""
         print("\n\n🛑 Stopping process...")
-        
+
         # Stop monitoring
         self.monitoring = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=2)
-        
+
         # Show resource usage summary
         self.show_resource_summary()
-        
+
         if self.process:
             self.process.terminate()
             try:
@@ -57,30 +57,30 @@ class ObsidianAutoLinker:
         self.running = False
         print("✅ Process stopped safely")
         sys.exit(0)
-    
+
     def get_vault_path(self):
         """Get vault path from user"""
         default_path = "/Users/medici/Documents/MediciVault"
-        
+
         print("📁 Obsidian Vault Path:")
         print(f"   Default: {default_path}")
-        
+
         try:
             vault_path = input("   Enter path (or press Enter for default): ").strip()
         except EOFError:
             # Non-interactive mode, use default
             vault_path = default_path
             print(f"   Using default: {vault_path}")
-        
+
         if not vault_path:
             vault_path = default_path
-            
+
         if not os.path.exists(vault_path):
             print(f"❌ Path does not exist: {vault_path}")
             return None
-            
+
         return vault_path
-    
+
     def start_resource_monitoring(self):
         """Start monitoring system resources"""
         self.monitoring = True
@@ -88,7 +88,7 @@ class ObsidianAutoLinker:
         self.monitor_thread = threading.Thread(target=self.monitor_resources, daemon=True)
         self.monitor_thread.start()
         print("📊 Resource monitoring started")
-    
+
     def monitor_resources(self):
         """Monitor CPU and memory usage"""
         while self.monitoring:
@@ -97,45 +97,45 @@ class ObsidianAutoLinker:
                 cpu_percent = psutil.cpu_percent(interval=1)
                 memory = psutil.virtual_memory()
                 memory_percent = memory.percent
-                
+
                 # Update stats
                 self.resource_stats['cpu_samples'].append(cpu_percent)
                 self.resource_stats['memory_samples'].append(memory_percent)
-                
+
                 # Keep only last 60 samples (1 minute of data)
                 if len(self.resource_stats['cpu_samples']) > 60:
                     self.resource_stats['cpu_samples'] = self.resource_stats['cpu_samples'][-60:]
                     self.resource_stats['memory_samples'] = self.resource_stats['memory_samples'][-60:]
-                
+
                 # Update peaks
                 if cpu_percent > self.resource_stats['peak_cpu']:
                     self.resource_stats['peak_cpu'] = cpu_percent
                 if memory_percent > self.resource_stats['peak_memory']:
                     self.resource_stats['peak_memory'] = memory_percent
-                
+
                 # Update averages
                 if self.resource_stats['cpu_samples']:
                     self.resource_stats['avg_cpu'] = sum(self.resource_stats['cpu_samples']) / len(self.resource_stats['cpu_samples'])
                     self.resource_stats['avg_memory'] = sum(self.resource_stats['memory_samples']) / len(self.resource_stats['memory_samples'])
-                
+
                 time.sleep(1)
             except Exception as e:
                 print(f"⚠️  Resource monitoring error: {e}")
                 break
-    
+
     def update_activity(self, stage, activity=""):
         """Update what the process is currently doing"""
         self.resource_stats['current_stage'] = stage
         self.resource_stats['last_activity'] = f"{stage}: {activity}" if activity else stage
         self.resource_stats['last_activity_time'] = datetime.now().strftime("%H:%M:%S")
-    
+
     def show_resource_summary(self):
         """Show resource usage summary when stopping"""
         if not self.resource_stats['start_time']:
             return
-            
+
         duration = datetime.now() - self.resource_stats['start_time']
-        
+
         print("\n" + "="*60)
         print("📊 RESOURCE USAGE SUMMARY")
         print("="*60)
@@ -157,7 +157,7 @@ class ObsidianAutoLinker:
             print(f"📊 Recent Memory Trend: {recent_memory[-1]:.1f}% (last 10s avg: {sum(recent_memory)/len(recent_memory):.1f}%)")
 
         print("="*60)
-    
+
     def get_file_ordering(self):
         """Get file ordering preference"""
         print("\n📋 File Processing Order:")
@@ -165,7 +165,7 @@ class ObsidianAutoLinker:
         print("   2. Size (largest first)")
         print("   3. Random")
         print("   4. Alphabetical")
-        
+
         while True:
             try:
                 choice = input("   Choose (1-4, default=1): ").strip()
@@ -173,7 +173,7 @@ class ObsidianAutoLinker:
                 # Non-interactive mode, use default
                 choice = "1"
                 print("   Using default: 1")
-            
+
             if not choice:
                 return "recent"
             elif choice == "1":
@@ -186,14 +186,14 @@ class ObsidianAutoLinker:
                 return "alphabetical"
             else:
                 print("   ❌ Invalid choice. Please enter 1-4")
-    
+
     def get_processing_mode(self):
         """Get processing mode"""
         print("\n🔧 Processing Mode:")
         print("   1. Fast Dry Run (quick test - no AI analysis)")
         print("   2. Full Dry Run (complete test with AI analysis)")
         print("   3. Live Run (process files for real)")
-        
+
         while True:
             try:
                 choice = input("   Choose (1-3, default=1): ").strip()
@@ -201,7 +201,7 @@ class ObsidianAutoLinker:
                 # Non-interactive mode, use default
                 choice = "1"
                 print("   Using default: 1")
-            
+
             if not choice:
                 return "fast_dry"
             elif choice == "1":
@@ -212,14 +212,14 @@ class ObsidianAutoLinker:
                 return "live"
             else:
                 print("   ❌ Invalid choice. Please enter 1-3")
-    
+
     def get_batch_size(self):
         """Get batch size"""
         print("\n📦 Processing Batch Size:")
         print("   1. One file at a time (recommended)")
         print("   2. Small batch (5 files)")
         print("   3. Medium batch (10 files)")
-        
+
         while True:
             try:
                 choice = input("   Choose (1-3, default=1): ").strip()
@@ -227,7 +227,7 @@ class ObsidianAutoLinker:
                 # Non-interactive mode, use default
                 choice = "1"
                 print("   Using default: 1")
-            
+
             if not choice:
                 return 1
             elif choice == "1":
@@ -274,7 +274,7 @@ class ObsidianAutoLinker:
         else:  # live
             dry_run = False
             fast_dry_run = False
-            
+
         config_content = f"""batch_size: {batch_size}
 custom_model_name: ''
 dry_run: {dry_run}
@@ -284,12 +284,12 @@ ollama_base_url: http://localhost:11434
 ollama_model: qwen2.5:3b
 vault_path: {vault_path}
 """
-        
+
         with open('config.yaml', 'w') as f:
             f.write(config_content)
-        
+
         print(f"✅ Configuration updated")
-    
+
     def check_ollama(self):
         """Check if Ollama is running"""
         try:
@@ -312,7 +312,7 @@ vault_path: {vault_path}
         except Exception as e:
             print(f"❌ Unexpected error checking Ollama: {e}")
             return False
-    
+
     def run_processing(self):
         """Run the processing script"""
         print("\n🚀 Starting Obsidian Auto-Linker...")
@@ -322,6 +322,7 @@ vault_path: {vault_path}
         # Set up signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
 
+        # Start resource monitoring
         # If dashboard is enabled, run in-process
         if self.enable_dashboard:
             try:
@@ -399,7 +400,7 @@ vault_path: {vault_path}
         finally:
             self.running = False
             self.monitoring = False
-    
+
     def show_previous_results(self):
         """Show results from the previous run"""
         try:
@@ -412,7 +413,7 @@ vault_path: {vault_path}
                         processed = len(data.get('processed_files', []))
                         failed = len(data.get('failed_files', []))
                         last_update = data.get('last_update', 'Unknown')
-                        
+
                         print("\n📊 PREVIOUS RUN RESULTS")
                         print("="*40)
                         print(f"✅ Files Processed: {processed}")
@@ -425,24 +426,24 @@ vault_path: {vault_path}
         except Exception as e:
             print(f"⚠️  Could not load previous results: {e}")
         return False
-    
+
     def main(self):
         """Main interactive interface"""
         print("="*60)
         print("🚀 OBSIDIAN AUTO-LINKER")
         print("   Interactive Configuration & Control")
         print("="*60)
-        
+
         # Show previous results if available
         self.show_previous_results()
-        
+
         # Check Ollama first
         if not self.check_ollama():
             print("\n❌ Ollama is not running or not accessible")
             print("   Please start Ollama first:")
             print("   ollama serve")
             return
-        
+
         # Get user preferences
         vault_path = self.get_vault_path()
         if not vault_path:
@@ -468,6 +469,7 @@ vault_path: {vault_path}
         print(f"   📋 Order: {file_ordering}")
         print(f"   🔧 Mode: {mode_descriptions[processing_mode]}")
         print(f"   📦 Batch: {batch_size} file(s) at a time")
+
         print(f"   📊 Dashboard: {'Enabled' if enable_dashboard else 'Disabled'}")
         
         # Confirm before running
@@ -478,18 +480,18 @@ vault_path: {vault_path}
             print("   ⚡ FAST DRY RUN: Quick test - no AI analysis, very fast")
         else:
             print("   ✅ FULL DRY RUN: Complete test with AI analysis")
-            
+
         try:
             confirm = input("\n   Continue? (y/N): ").strip().lower()
         except EOFError:
             # Non-interactive mode, auto-confirm
             confirm = "y"
             print("   Auto-confirming (non-interactive mode)")
-        
+
         if confirm not in ['y', 'yes']:
             print("❌ Cancelled by user")
             return
-        
+
         # Update config and run
         self.update_config(vault_path, file_ordering, processing_mode, batch_size)
         self.run_processing()
@@ -497,3 +499,4 @@ vault_path: {vault_path}
 if __name__ == "__main__":
     app = ObsidianAutoLinker()
     app.main()
+

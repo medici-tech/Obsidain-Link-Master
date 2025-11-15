@@ -12,13 +12,9 @@ import json
 import shutil
 import hashlib
 import time
-import threading
-from pathlib import Path
-from typing import List, Set, Dict, Tuple, Optional, Any
+from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
-from tqdm import tqdm
 import fnmatch
 
 # Try to import anthropic for Claude API support (optional)
@@ -73,8 +69,6 @@ BATCH_SIZE = config.get('batch_size', 1)
 MAX_RETRIES = config.get('max_retries', 3)
 PARALLEL_WORKERS = config.get('parallel_workers', 1)
 FILE_ORDERING = config.get('file_ordering', 'recent')
-# Cost tracking removed for local LLM (free to use)
-# Budget alert removed for local LLM (free to use)
 RESUME_ENABLED = config.get('resume_enabled', True)
 CACHE_ENABLED = config.get('cache_enabled', True)
 INCREMENTAL_PROCESSING = config.get('incremental_processing', True)
@@ -106,6 +100,7 @@ OLLAMA_MAX_RETRIES = config.get('ollama_max_retries', 5)  # More retries for com
 OLLAMA_TEMPERATURE = config.get('ollama_temperature', 0.1)
 OLLAMA_MAX_TOKENS = config.get('ollama_max_tokens', 1024)  # More tokens for detailed responses
 
+def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None) -> str:
 # AI Provider selection (ollama or claude)
 AI_PROVIDER = config.get('ai_provider', 'ollama')
 
@@ -178,6 +173,8 @@ def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None, t
             response.raise_for_status()
 
             result = response.json()
+            return result.get('response', '').strip()
+
             response_text = result.get('response', '').strip()
 
             # Track metrics
@@ -504,6 +501,23 @@ def load_cache():
     if not CACHE_ENABLED:
         return
 
+    cache_file = config.get('cache_file', '.ai_cache.json')
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r') as f:
+                global ai_cache
+                data = json.load(f)
+                if data and isinstance(data, dict):
+                    ai_cache = data
+                else:
+                    ai_cache = {}
+        except (json.JSONDecodeError, ValueError):
+            ai_cache = {}
+        except Exception as e:
+            print(f"⚠️  Could not load cache: {e}")
+
+        if ai_cache:
+            print(f"💾 Loaded cache: {len(ai_cache)} cached responses")
     # Cache is already loaded in create_bounded_cache()
     # Just display info
     cache_size = len(ai_cache)
@@ -578,33 +592,33 @@ def should_process_file(file_path: str) -> bool:
     """Check if file should be processed based on filters"""
     filename = os.path.basename(file_path)
     relative_path = os.path.relpath(file_path, VAULT_PATH)
-    
+
     # Check exclude patterns
     exclude_patterns = config.get('exclude_patterns', [])
     for pattern in exclude_patterns:
         if fnmatch.fnmatch(filename, pattern):
             return False
-    
+
     # Check include patterns
     include_patterns = config.get('include_patterns', [])
     if include_patterns:
         if not any(fnmatch.fnmatch(filename, pattern) for pattern in include_patterns):
             return False
-    
+
     # Check folder whitelist
     folder_whitelist = config.get('folder_whitelist', [])
     if folder_whitelist:
         folder = os.path.dirname(relative_path)
         if not any(folder.startswith(f) for f in folder_whitelist):
             return False
-    
+
     # Check folder blacklist
     folder_blacklist = config.get('folder_blacklist', [])
     if folder_blacklist:
         folder = os.path.dirname(relative_path)
         if any(folder.startswith(f) for f in folder_blacklist):
             return False
-    
+
     return True
 
 def get_all_notes(vault_path: str) -> Dict[str, str]:
@@ -630,12 +644,12 @@ def create_moc_note(moc_name: str, vault_path: str) -> None:
     """Create MOC note if it doesn't exist"""
     moc_filename = MOCS[moc_name].replace('📍 ', '') + '.md'
     moc_path = os.path.join(vault_path, moc_filename)
-    
+
     if os.path.exists(moc_path):
         return
-    
+
     description = MOC_DESCRIPTIONS.get(moc_name, f"Content related to {moc_name}")
-    
+
     content = f"""# {MOCS[moc_name]}
 
 > {description}
@@ -660,7 +674,7 @@ This is a Map of Content (MOC) that organizes all notes related to {moc_name.low
 
 *This MOC was auto-generated. Add your own structure and notes as needed.*
 """
-    
+
     if not DRY_RUN:
         with open(moc_path, 'w', encoding='utf-8') as f:
             f.write(content)
@@ -672,17 +686,17 @@ def fast_dry_run_analysis(content: str, file_path: str) -> Dict[str, Any]:
     filename = os.path.basename(file_path)
     file_size = len(content)
     word_count = len(content.split())
-    
+
     # Simple keyword extraction (no AI)
     words = content.lower().split()
     word_freq = {}
     for word in words:
         if len(word) > 3:  # Only words longer than 3 chars
             word_freq[word] = word_freq.get(word, 0) + 1
-    
+
     # Get top keywords
     top_keywords = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:10]
-    
+
     # Simple category detection based on keywords
     categories = []
     if any(word in content.lower() for word in ['work', 'job', 'career', 'business', 'meeting']):
@@ -697,10 +711,10 @@ def fast_dry_run_analysis(content: str, file_path: str) -> Dict[str, Any]:
         categories.append('Projects & Ideas')
     if any(word in content.lower() for word in ['personal', 'life', 'family', 'friend', 'relationship']):
         categories.append('Personal & Life')
-    
+
     if not categories:
         categories = ['Life & Misc']
-    
+
     return {
         'filename': filename,
         'file_size': file_size,
@@ -729,6 +743,10 @@ def analyze_with_balanced_ai(content: str, existing_notes: Dict[str, str]) -> Op
     if ai_cache.has(content_hash):
         cached_result = ai_cache.get(content_hash)
         analytics['cache_hits'] += 1
+        return ai_cache[content_hash]
+
+    analytics['cache_misses'] += 1
+
         if dashboard:
             lookup_time = time.time() - cache_start
             dashboard.add_cache_hit(lookup_time)
@@ -741,13 +759,13 @@ def analyze_with_balanced_ai(content: str, existing_notes: Dict[str, str]) -> Op
     
     # Sample of existing notes for context (reduced for efficiency)
     note_list = "\n".join([f"- {title}" for title in list(existing_notes.keys())[:50]])
-    
+
     # Extract main content (before footer if exists)
     main_content = re.split(r'\n---\n## 📊 METADATA', content)[0]
-    
+
     # Truncate content for faster processing
     content_sample = main_content[:2000]  # Reduced from 4000
-    
+
     prompt = f"""Analyze this Obsidian conversation and provide structured metadata.
 
 EXISTING NOTES (for linking):
@@ -774,12 +792,13 @@ Return ONLY the JSON object, no explanations or other text."""
     try:
         # Call configured AI provider (Ollama or Claude)
         system_prompt = "You analyze conversations and create knowledge connections. Return valid JSON only."
+        result_text = call_ollama(prompt, system_prompt)
         result_text = call_ai_provider(prompt, system_prompt)
 
         if not result_text:
             logger.error(f"❌ Empty response from {AI_PROVIDER.upper()}")
             return None
-        
+
         # Clean up potential markdown formatting
         result_text = result_text.strip()
         if result_text.startswith('```json'):
@@ -789,11 +808,13 @@ Return ONLY the JSON object, no explanations or other text."""
         if result_text.endswith('```'):
             result_text = result_text[:-3]
         result_text = result_text.strip()
-        
+
         # Try to parse JSON with better error handling
         try:
             result = json.loads(result_text)
         except json.JSONDecodeError as e:
+            print(f"  ⚠️  JSON parse error: {e}")
+            print(f"  Response was: {result_text[:200]}")
             logger.warning(f"  ⚠️  JSON parse error: {e}")
             logger.debug(f"  Response was: {result_text[:200]}")
 
@@ -809,8 +830,9 @@ Return ONLY the JSON object, no explanations or other text."""
             else:
                 logger.error(f"  ❌ No JSON found in response")
                 return None
-        
+
         # Cache the result
+        ai_cache[content_hash] = result
         with cache_lock:
             ai_cache.set(content_hash, result)
         
@@ -825,22 +847,22 @@ Return ONLY the JSON object, no explanations or other text."""
 def backup_file(file_path: str) -> None:
     """Create timestamped backup with verification"""
     os.makedirs(BACKUP_FOLDER, exist_ok=True)
-    
+
     filename = os.path.basename(file_path)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     backup_name = f"{filename[:-3]}_{timestamp}.md"
     backup_path = os.path.join(BACKUP_FOLDER, backup_name)
-    
+
     try:
         shutil.copy2(file_path, backup_path)
-        
+
         # Verify backup
         if config.get('backup_verification', True):
             with open(file_path, 'r') as original:
                 with open(backup_path, 'r') as backup:
                     if original.read() != backup.read():
                         raise Exception("Backup verification failed")
-        
+
         # Clean old backups
         backups = sorted([f for f in os.listdir(BACKUP_FOLDER) if f.startswith(filename[:-3])])
         if len(backups) > MAX_BACKUPS:
@@ -855,15 +877,15 @@ def add_to_review_queue(file_path: str, ai_result: Dict[str, Any], confidence: f
     """Add low confidence file to review queue"""
     if not ENABLE_REVIEW_QUEUE:
         return
-    
+
     # Create review queue directory
     if not os.path.exists(REVIEW_QUEUE_PATH):
         os.makedirs(REVIEW_QUEUE_PATH)
-    
+
     filename = os.path.basename(file_path)
     review_filename = f"REVIEW_{filename}"
     review_path = os.path.join(REVIEW_QUEUE_PATH, review_filename)
-    
+
     # Create review file with analysis details
     review_content = f"""# 🔍 REVIEW REQUIRED: {filename}
 
@@ -901,7 +923,7 @@ Once you've reviewed and corrected the analysis, you can:
 2. Update the confidence score manually
 3. Process the file with the corrected metadata
 """
-    
+
     try:
         with open(review_path, 'w', encoding='utf-8') as f:
             f.write(review_content)
@@ -912,6 +934,12 @@ Once you've reviewed and corrected the analysis, you can:
 def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: Dict) -> bool:
     """Process single conversation file with enhanced error handling"""
 
+    filename = os.path.basename(file_path)
+
+    # Check if already processed
+    if file_path in progress_data['processed_files']:
+        stats['already_processed'] += 1
+        return False
     file_start_time = time.time()
     filename = os.path.basename(file_path)
 
@@ -930,7 +958,7 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
         if dashboard:
             dashboard.add_error("file_read_error", f"Could not read {filename}")
         return False
-    
+
     # Check if already processed (has proper structure)
     if '## 📊 METADATA' in content and '## 🔗 WIKI STRUCTURE' in content:
         has_parent = re.search(r'Parent: \[\[📍.*MOC\]\]', content)
@@ -942,6 +970,7 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
             return False
 
     # Analyze with AI or Fast Dry Run
+    print(f"\n📄 {filename}")
     logger.info(f"\n📄 {filename}")
 
     if FAST_DRY_RUN:
@@ -960,7 +989,7 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
                 analytics['retry_attempts'] += 1
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(2 ** attempt)  # Exponential backoff
-    
+
     if not ai_result:
         stats['failed'] += 1
         analytics['error_types']['ai_analysis_failed'] = analytics['error_types'].get('ai_analysis_failed', 0) + 1
@@ -979,24 +1008,25 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     print(f"  ✓ Confidence: {confidence:.0%}")
     print(f"  ✓ MOC: {ai_result.get('moc_category')}")
     print(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
-    
+
     # Check confidence threshold
     if confidence < CONFIDENCE_THRESHOLD:
         print(f"  ⚠️  LOW CONFIDENCE: {confidence:.0%} < {CONFIDENCE_THRESHOLD:.0%} threshold")
         print(f"  📋 Flagging for manual review...")
-        
+
         # Add to review queue
         if ENABLE_REVIEW_QUEUE:
             add_to_review_queue(file_path, ai_result, confidence)
             analytics['review_queue_count'] = analytics.get('review_queue_count', 0) + 1
             print(f"  📝 Added to review queue: {REVIEW_QUEUE_PATH}")
-        
+
         # Track low confidence files
         analytics['low_confidence_files'] = analytics.get('low_confidence_files', 0) + 1
-    
+
     # Track MOC distribution
     moc_category = ai_result.get('moc_category', 'Life & Misc')
     analytics['moc_distribution'][moc_category] = analytics['moc_distribution'].get(moc_category, 0) + 1
+
     if dashboard:
         dashboard.add_moc_category(moc_category)
     
@@ -1005,16 +1035,16 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     hierarchical_tags = ai_result.get('hierarchical_tags', [])
     key_concepts = ai_result.get('key_concepts', [])
     sibling_notes = ai_result.get('sibling_notes', [])
-    
+
     # Verify sibling notes exist
     verified_siblings = []
     for note in sibling_notes[:MAX_SIBLINGS]:
         if note in existing_notes:
             verified_siblings.append(f"[[{note}]]")
-    
+
     # Build footer sections
     parent_moc = MOCS.get(moc_category, MOCS['Life & Misc'])
-    
+
     metadata_section = f"""## 📊 METADATA
 
 Primary Topic: {primary_topic}
@@ -1037,7 +1067,7 @@ Children: None yet"""
 
     # Extract main content (before any existing footer)
     main_content = re.split(r'\n---\n## 📊 METADATA', content)[0].strip()
-    
+
     # Build new complete content
     new_content = f"""{main_content}
 
@@ -1055,6 +1085,8 @@ Children: None yet"""
 """
 
     # Show results
+    print(f"  🏷️  Tags: {len(hierarchical_tags)}")
+    print(f"  🔗 Siblings: {len(verified_siblings)}")
     logger.info(f"  🏷️  Tags: {len(hierarchical_tags)}")
     logger.info(f"  🔗 Siblings: {len(verified_siblings)}")
 
@@ -1064,17 +1096,21 @@ Children: None yet"""
             # Create new file instead of overwriting
             base_name = os.path.splitext(file_path)[0]
             new_file_path = f"{base_name}_linked.md"
-            
+
             # Create backup of original
             backup_file(file_path)
-            
+
             # Write new file
             with open(new_file_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
-            
+
             stats['processed'] += 1
             stats['links_added'] += len(verified_siblings)
             stats['tags_added'] += len(hierarchical_tags)
+            progress_data['processed_files'].add(file_path)
+
+            print(f"  📄 Created new file: {os.path.basename(new_file_path)}")
+            print("  ✅ File updated")
             with progress_lock:
                 progress_data['processed_files'].add(file_path)
 
@@ -1093,6 +1129,7 @@ Children: None yet"""
             return False
     else:
         stats['would_process'] += 1
+        print("  🔥 DRY RUN - No changes made")
         logger.info("  🔥 DRY RUN - No changes made")
 
     # Track file processing time
@@ -1118,11 +1155,11 @@ def process_batch(files: List[str], existing_notes: Dict[str, str], stats: Dict)
         'links_added': 0,
         'tags_added': 0
     }
-    
+
     for file_path in files:
         if process_conversation(file_path, existing_notes, batch_stats):
             batch_stats['processed'] += 1
-    
+
     return batch_stats
 
 def order_files(files: List[str], ordering: str) -> List[str]:
@@ -1155,7 +1192,7 @@ def show_progress(current_file: str, stage: str, processed: int, total: int, sta
     """Show progress information"""
     elapsed = datetime.now() - start_time
     elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
-    
+
     if processed > 0:
         speed = processed / (elapsed.total_seconds() / 60)  # files per minute
         remaining = total - processed
@@ -1167,9 +1204,9 @@ def show_progress(current_file: str, stage: str, processed: int, total: int, sta
     else:
         speed = 0
         eta_str = "∞"
-    
+
     progress_pct = (processed / total * 100) if total > 0 else 0
-    
+
     print(f"\r📊 Progress: {processed}/{total} ({progress_pct:.1f}%) | "
           f"⏱️ {elapsed_str} | 🏃 {speed:.1f}/min | ⏳ {eta_str} | "
           f"📁 {current_file[:30]}... | 🔄 {stage}", end="", flush=True)
@@ -1178,15 +1215,15 @@ def generate_analytics_report() -> None:
     """Generate comprehensive analytics report"""
     if not ANALYTICS_ENABLED:
         return
-    
+
     analytics['end_time'] = datetime.now()
     analytics['processing_time'] = (analytics['end_time'] - analytics['start_time']).total_seconds()
-    
+
     # Save analytics
     analytics_file = config.get('analytics_file', 'processing_analytics.json')
     with open(analytics_file, 'w') as f:
         json.dump(analytics, f, indent=2, default=str)
-    
+
     # Generate HTML report
     if config.get('generate_report', True):
         html_report = f"""
@@ -1208,7 +1245,7 @@ def generate_analytics_report() -> None:
         <h1>📊 Obsidian Auto-Linker Analytics Report</h1>
         <p>Generated: {analytics['end_time']}</p>
     </div>
-    
+
     <div class="chart">
         <h2>📈 Processing Summary</h2>
         <div class="metric"><strong>Total Files:</strong> {analytics['total_files']}</div>
@@ -1219,21 +1256,21 @@ def generate_analytics_report() -> None:
         <div class="metric"><strong>Low Confidence Files:</strong> {analytics.get('low_confidence_files', 0)}</div>
         <div class="metric"><strong>Review Queue:</strong> {analytics.get('review_queue_count', 0)} files flagged for manual review</div>
     </div>
-    
+
     <div class="chart">
         <h2>🏷️ MOC Distribution</h2>
         <div class="moc-dist">
             {''.join([f'<div class="moc-item">{moc}: {count}</div>' for moc, count in analytics['moc_distribution'].items()])}
         </div>
     </div>
-    
+
     <div class="chart">
         <h2>⚡ Performance Metrics</h2>
         <div class="metric"><strong>Cache Hits:</strong> {analytics['cache_hits']}</div>
         <div class="metric"><strong>Cache Misses:</strong> {analytics['cache_misses']}</div>
         <div class="metric"><strong>Retry Attempts:</strong> {analytics['retry_attempts']}</div>
     </div>
-    
+
     <div class="chart">
         <h2>❌ Error Summary</h2>
         {''.join([f'<div class="metric"><strong>{error}:</strong> {count}</div>' for error, count in analytics['error_types'].items()])}
@@ -1245,6 +1282,7 @@ def generate_analytics_report() -> None:
         with open('analytics_report.html', 'w') as f:
             f.write(html_report)
 
+        print(f"📊 Analytics report saved to: analytics_report.html")
 
 def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_num, total_files, start_time):
     """
@@ -1325,7 +1363,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
     # Declare global variables for interactive mode
     global DRY_RUN, BATCH_SIZE, OLLAMA_MODEL, FILE_ORDERING
-    
+
     print("=" * 60)
     print("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
     if FAST_DRY_RUN:
@@ -1333,12 +1371,19 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     elif DRY_RUN:
         logger.info("   🔍 DRY RUN MODE - Full AI Analysis")
     else:
+        print("   🚀 LIVE MODE - Processing Files")
+    print("=" * 60)
+    print()
         logger.info("   🚀 LIVE MODE - Processing Files")
     logger.info("=" * 60)
     logger.info("")
 
     # Initialize analytics
     analytics['start_time'] = datetime.now()
+
+    # Load progress and cache
+    load_progress()
+    load_cache()
 
     # Load progress, cache, and incremental tracker
     load_progress()
@@ -1363,10 +1408,15 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         'links_added': 0,
         'tags_added': 0
     }
-    
+
     # Progress tracking
     start_time = datetime.now()
     processed_count = 0
+
+    # Test Ollama connection first
+    print("🔍 Testing Ollama connection...")
+    print("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
+    test_response = call_ollama("Hello", "You are a helpful assistant.")
     
     # Test AI provider connection first
     logger.info(f"🔍 Testing {AI_PROVIDER.upper()} connection...")
@@ -1383,6 +1433,14 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             logger.info(f"   Then: ollama pull {OLLAMA_MODEL}")
         return
     else:
+        print("✅ Ollama connection successful")
+        print("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
+        print(f"   🤖 Using model: {OLLAMA_MODEL}")
+        print(f"   ⏱️  Base timeout: {OLLAMA_TIMEOUT}s (extended for complex reasoning)")
+        print(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
+        print(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
+        print(f"   🧠 Extended timeouts prevent reasoning interruptions")
+
         if AI_PROVIDER == 'claude':
             logger.info(f"✅ Claude API connection successful")
             logger.info(f"   🤖 Using model: {CLAUDE_MODEL}")
@@ -1408,6 +1466,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info("🔍 Scanning vault...")
     logger.info(f"   Vault path: {VAULT_PATH}")
     existing_notes = get_all_notes(VAULT_PATH)
+    print(f"   Found {len(existing_notes)} existing notes")
     logger.info(f"   Found {len(existing_notes)} existing notes")
 
     # Create MOC notes if needed
@@ -1426,7 +1485,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 file_path = os.path.join(root, file)
                 if should_process_file(file_path):
                     all_files.append(file_path)
-    
+
     # Filter out already processed files
     if RESUME_ENABLED:
         all_files = [f for f in all_files if f not in progress_data['processed_files']]
@@ -1455,6 +1514,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info(f"📋 Ordering files by: {FILE_ORDERING}")
     all_files = order_files(all_files, FILE_ORDERING)
 
+    print(f"   Found {len(all_files)} markdown files to process")
     logger.info(f"   Found {len(all_files)} markdown files to process")
 
     # Set total files for progress tracking
@@ -1469,6 +1529,9 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         if total_estimated_hours >= 1:
             logger.info(f"   ⏰ Estimated time: {total_estimated_hours:.1f} hours (local models are slow)")
         else:
+            print(f"   ⏰ Estimated time: {total_estimated_minutes:.0f} minutes (local models are slow)")
+        print("   💡 Tip: You can stop and resume processing anytime")
+
             logger.info(f"   ⏰ Estimated time: {total_estimated_minutes:.0f} minutes (local models are slow)")
         logger.info("   💡 Tip: You can stop and resume processing anytime")
     
@@ -1490,7 +1553,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             print("\n" + "=" * 60)
             print("🎛️  INTERACTIVE CONFIGURATION")
             print("=" * 60)
-            
+
             # Ask for run type
             print(f"\n📊 Found {len(all_files)} files to process")
             print("\n🔧 Configuration Options:")
@@ -1499,9 +1562,9 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             print("3. 📝 Custom Settings")
             print("4. 🐣 Start with Smallest Files (quick test)")
             print("5. ❌ Cancel")
-            
+
             choice = input("\nChoose option (1-5): ").strip()
-            
+
             if choice == "1":
                 print("✅ Selected: Dry Run Mode")
                 # Keep dry_run = True
@@ -1516,7 +1579,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 DRY_RUN = False
             elif choice == "3":
                 print("\n🔧 Custom Settings:")
-                
+
                 # Batch size
                 batch_input = input(f"Batch size (current: {BATCH_SIZE}): ").strip()
                 if batch_input:
@@ -1525,7 +1588,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                         print(f"✅ Batch size set to: {BATCH_SIZE}")
                     except ValueError:
                         print("⚠️  Invalid batch size, keeping current")
-                
+
                 # Model selection
                 print(f"\nCurrent model: {OLLAMA_MODEL}")
                 print("Available models: qwen3:8b, qwen2.5:3b")
@@ -1535,7 +1598,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                     print(f"✅ Model set to: {OLLAMA_MODEL}")
                 elif model_input:
                     print("⚠️  Invalid model, keeping current")
-                
+
                 # File ordering
                 print(f"\nCurrent file ordering: {FILE_ORDERING}")
                 print("Available options: recent, oldest, smallest, largest, random, alphabetical")
@@ -1545,7 +1608,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                     print(f"✅ File ordering set to: {FILE_ORDERING}")
                 elif order_input:
                     print("⚠️  Invalid ordering, keeping current")
-                
+
                 # Run type
                 run_type = input("\nRun type (dry/real): ").strip().lower()
                 if run_type == "real":
@@ -1558,7 +1621,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                         print("✅ Keeping dry run mode")
                 else:
                     print("✅ Dry run mode confirmed")
-                    
+
             elif choice == "4":
                 print("✅ Selected: Start with Smallest Files")
                 print("🐣 Perfect for quick testing!")
@@ -1569,24 +1632,24 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 return
             else:
                 print("⚠️  Invalid choice, using default settings")
-            
+
             # Final confirmation
             print(f"\n📋 Final Configuration:")
             print(f"   🤖 Model: {OLLAMA_MODEL}")
             print(f"   📦 Batch size: {BATCH_SIZE}")
             print(f"   🧪 Mode: {'Dry Run' if DRY_RUN else 'Real Processing'}")
             print(f"   📁 Files: {len(all_files)}")
-            
+
             final_confirm = input("\nProceed with these settings? (y/N): ")
             if final_confirm.lower() != 'y':
                 print("❌ Processing cancelled by user")
                 return
-                
+
         except EOFError:
             # Running in non-interactive mode (like from web GUI)
             print(f"⚠️  Auto-continuing with default settings...")
             pass
-        
+
         # Cost tracking removed for local LLM
 
     if DRY_RUN:
@@ -1598,6 +1661,14 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     else:
         print(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
         print(f"   Backups stored in: {BACKUP_FOLDER}\n")
+
+    # Process files one at a time
+    print("📝 Processing files one at a time...\n")
+
+    analytics['total_files'] = len(all_files)
+
+    for i, file_path in enumerate(all_files, 1):
+        current_file = os.path.basename(file_path)
     
     # Process files (sequential or parallel based on PARALLEL_WORKERS)
     if PARALLEL_WORKERS > 1:
@@ -1669,7 +1740,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             current_file = os.path.basename(file_path)
 
         print(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
-        
+
         # Check dry run limit
         if DRY_RUN and i > DRY_RUN_LIMIT:
             print(f"\n🛑 DRY RUN LIMIT REACHED ({DRY_RUN_LIMIT} files)")
@@ -1683,15 +1754,26 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             print(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)}")
             print(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files")
             print(f"⏱️  Time elapsed: {datetime.now() - start_time}")
-            
+
             if DRY_RUN_INTERACTIVE:
                 print(f"\n🎛️  What would you like to do next?")
                 print("1. 🚀 Start REAL processing (modify files)")
                 print("2. 🔍 Continue dry run (analyze more files)")
                 print("3. 📊 Generate analytics report and exit")
                 print("4. ❌ Stop processing")
-                
+
                 try:
+                    choice = input("\nChoose option (1-4): ").strip()
+
+                    if choice == "1":
+                        print("⚠️  SWITCHING TO REAL PROCESSING")
+                        print("   This will modify your files!")
+                        confirm = input("Are you sure? Type 'YES' to continue: ")
+                        if confirm == "YES":
+                            DRY_RUN = False
+                            print("✅ Real processing enabled - continuing with remaining files...")
+                        else:
+                            print("❌ Real processing cancelled")
                     file_path_result, success, skip_reason = future.result()
 
                     if success:
@@ -1804,9 +1886,28 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 set_file_stage(file_path, 'completed')  # Still mark as completed even if skipped
                 print("📊 Dry run limit reached - generating analytics report...")
                 break
-        
+
         # Show progress
         show_progress(current_file, "Processing", processed_count, total_files, start_time)
+
+        # Process the file
+        if process_conversation(file_path, existing_notes, stats):
+            processed_count += 1
+            show_progress(current_file, "Completed", processed_count, total_files, start_time)
+        else:
+            show_progress(current_file, "Skipped", processed_count, total_files, start_time)
+
+        # Save progress after each file
+        save_progress()
+        save_cache()
+
+        # Show file summary
+        print(f"\n📊 File {i} complete:")
+        print(f"   ✅ Processed: {stats['processed']}")
+        print(f"   ⏭️  Skipped: {stats['already_processed']}")
+        print(f"   ❌ Failed: {stats['failed']}")
+        print(f"   🔗 Links added: {stats['links_added']}")
+        print(f"   🏷️  Tags added: {stats['tags_added']}")
 
             # Process results as they complete
             for future in as_completed(future_to_file):
@@ -1908,6 +2009,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         print(f"   💾 Tracking: {inc_stats['total_tracked_files']} files total")
 
     # Cost tracking removed for local LLM
+    print()
     logger.info("")
 
     # Generate analytics report
@@ -1919,7 +2021,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         print("\n🚀 Generating ultra detailed analytics...")
         print("📊 Including before/after files and AI reasoning analysis...")
         import subprocess
-        result = subprocess.run(['python3', 'ultra_detailed_analytics.py'], 
+        result = subprocess.run(['python3', 'ultra_detailed_analytics.py'],
                               capture_output=True, text=True, timeout=120)
         if result.returncode == 0:
             print("✅ Ultra detailed analytics generated!")
@@ -1930,10 +2032,13 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     except Exception as e:
         print(f"⚠️ Ultra detailed analytics failed: {e}")
         print("📊 Using standard analytics report")
-    
+
     if DRY_RUN:
         logger.info("💡 Set dry_run: false in config.yaml to process for real")
     else:
+        print(f"💾 Backups saved to: {BACKUP_FOLDER}")
+
+    print("=" * 60)
         logger.info(f"💾 Backups saved to: {BACKUP_FOLDER}")
 
     logger.info("=" * 60)
@@ -1957,3 +2062,4 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
 
 if __name__ == "__main__":
     main()
+

@@ -22,7 +22,6 @@ from rich.live import Live
 from rich.text import Text
 from rich import box
 
-
 class LiveDashboard:
     """
     Ultra-detailed live monitoring dashboard with 30-second updates
@@ -631,7 +630,6 @@ class LiveDashboard:
 
         return layout
 
-
 # Global dashboard instance
 _dashboard_instance: Optional[LiveDashboard] = None
 
@@ -641,7 +639,6 @@ def get_dashboard(update_interval: int = 15) -> LiveDashboard:
     if _dashboard_instance is None:
         _dashboard_instance = LiveDashboard(update_interval=update_interval)
     return _dashboard_instance
-
 
 if __name__ == "__main__":
     # Test the dashboard
@@ -688,3 +685,4 @@ if __name__ == "__main__":
                 live.update(dashboard.render())
     except KeyboardInterrupt:
         print("\n\nDashboard stopped by user")
+

@@ -10,7 +10,6 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 
-
 def setup_logging(log_level: str = "INFO", log_file: str = "obsidian_linker.log", enable_file_logging: bool = True):
     """
     Set up logging configuration
@@ -65,15 +64,12 @@ def setup_logging(log_level: str = "INFO", log_file: str = "obsidian_linker.log"
 
     return logger
 
-
 def get_logger(name: str = "obsidian_linker") -> logging.Logger:
     """Get logger instance"""
     return logging.getLogger(name)
 
-
 # Default logger instance
 logger = get_logger()
-
 
 class DashboardLogHandler(logging.Handler):
     """
@@ -101,7 +97,6 @@ class DashboardLogHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
-
 if __name__ == "__main__":
     # Test logging
     test_logger = setup_logging(log_level="DEBUG")
@@ -113,3 +108,4 @@ if __name__ == "__main__":
     test_logger.critical("This is a critical message")
 
     print(f"\nLog file created: obsidian_linker.log")
+
