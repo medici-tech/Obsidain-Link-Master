@@ -5,17 +5,32 @@
 PyYAML>=6.0
 
 # HTTP requests for Ollama API
-requests>=2.32.0
+# Obsidian Auto-Linker Dependencies
+# Core dependencies for AI-powered Obsidian vault processing
 
-# Progress bars and terminal UI
+# Core dependencies
+requests>=2.32.0
+pyyaml>=6.0
 tqdm>=4.67.0
 rich>=13.0.0
 
 # System monitoring and process management
 psutil>=7.1.0
+rich>=13.0.0
+
+# Claude API support (optional, only needed if using ai_provider: claude)
+anthropic>=0.18.0
 
 # File system operations and path handling
 pathlib2>=2.3.7; python_version < "3.4"
+typing-extensions>=4.0.0; python_version < "3.8"
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Configuration validation
+pydantic>=2.0.0
 
 # Optional: Enhanced terminal output
 colorama>=0.4.6

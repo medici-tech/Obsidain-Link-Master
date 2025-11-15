@@ -1,0 +1,104 @@
+# Optimized Configuration for MacBook Air 2025 with 16GB RAM
+# Balanced performance and memory usage
+
+# Core settings
+vault_path: /Users/medici/Documents/MediciVault
+dry_run: true
+fast_dry_run: false
+
+# Analytics and reporting
+analytics_enabled: true
+generate_report: true
+detailed_analytics: true
+comprehensive_reporting: true
+auto_open_report: true
+include_before_after_files: true
+include_detailed_reasoning: true
+
+# Processing settings - OPTIMIZED FOR 16GB RAM
+batch_size: 1                    # Keep at 1 for AI processing quality
+parallel_workers: 2              # Increased from 1 for better performance
+max_retries: 3                   # Reduced for faster failure recovery
+ollama_max_retries: 3            # Reduced for faster failure recovery
+
+# Quality control settings
+confidence_threshold: 0.8         # 80% confidence required
+enable_review_queue: true         # Enable manual review for low confidence
+review_queue_path: "reviews/"     # Directory for review files
+
+# Dry run settings
+dry_run_limit: 10                 # Process 10 files in dry run
+dry_run_interactive: true         # Show interactive menu after limit
+
+# Ollama Model Settings - OPTIMIZED FOR 16GB RAM
+ollama_base_url: http://localhost:11434
+ollama_model: qwen3:8b            # Primary model for accuracy
+ollama_temperature: 0.1           # Low temperature for consistency
+ollama_max_tokens: 1024           # Reduced for faster processing
+ollama_context_window: 8192        # Reduced context window for memory efficiency
+ollama_timeout: 300               # 5 minutes per file (reduced from 600)
+ollama_retry_timeout: 450         # 7.5 minutes for retries (reduced from 900)
+ollama_max_reasoning_time: 600    # 10 minutes absolute maximum (reduced from 1200)
+
+# Dry Run Model (Qwen2.5:3b for speed)
+dry_run_model: qwen2.5:3b
+dry_run_max_tokens: 512
+dry_run_context_window: 4096
+dry_run_timeout: 120              # 2 minutes for dry runs
+
+# File processing
+file_ordering: 'recent'           # Process recent files first
+resume_enabled: true              # Enable resume functionality
+cache_enabled: true               # Enable AI response caching
+
+# Memory optimization settings
+memory_optimization: true          # Enable memory optimization
+max_memory_usage: 12              # Max 12GB for processing (leave 4GB for system)
+enable_memory_monitoring: true    # Enable memory monitoring
+memory_check_interval: 30         # Check memory every 30 seconds
+
+# Performance settings
+enable_smart_timeouts: true        # Adjust timeouts based on content complexity
+enable_reasoning_timeout: true     # Special timeout for reasoning tasks
+enable_progressive_timeouts: true # Increase timeouts for complex files
+
+# Extended timeout tracking
+track_processing_time: true
+track_confidence_scores: true
+track_reasoning: true
+track_file_sizes: true
+track_word_counts: true
+track_categorization_accuracy: true
+track_before_after_changes: true
+track_ai_reasoning: true
+track_timeout_events: true
+track_reasoning_duration: true
+
+# Enhanced reporting
+include_file_details: true
+include_processing_metrics: true
+include_performance_stats: true
+include_error_analysis: true
+include_moc_distribution: true
+include_confidence_analysis: true
+include_time_analysis: true
+include_content_analysis: true
+include_before_after_comparison: true
+include_ai_reasoning_analysis: true
+include_timeout_analysis: true
+include_memory_analysis: true      # NEW: Include memory usage analysis
+
+# Report settings
+report_format: 'html'
+include_charts: true
+include_timeline: true
+include_breakdown: true
+include_recommendations: true
+include_before_after_visualization: true
+include_reasoning_breakdown: true
+include_timeout_breakdown: true
+include_memory_breakdown: true     # NEW: Include memory usage breakdown
+
+# Interactive mode
+interactive_mode: true
+

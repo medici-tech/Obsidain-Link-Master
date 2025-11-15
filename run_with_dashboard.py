@@ -27,7 +27,7 @@ dashboard = None
 class EnhancedRunner:
     """Enhanced runner with live dashboard integration"""
 
-    def __init__(self, update_interval: int = 30):
+    def __init__(self, update_interval: int = 15):
         global logger, dashboard
 
         self.update_interval = update_interval
@@ -127,7 +127,10 @@ class EnhancedRunner:
         try:
             with open('config.yaml', 'r') as f:
                 existing_config = yaml.safe_load(f) or {}
-        except:
+        except FileNotFoundError:
+            existing_config = {}
+        except (yaml.YAMLError, IOError) as e:
+            logger.warning(f"Error loading config: {e}")
             existing_config = {}
 
         # Vault path
@@ -419,25 +422,10 @@ class EnhancedRunner:
             logger.error(f"Failed to import processor: {e}")
             return
 
-        # Start dashboard
-        dashboard.start()
-        self.running = True
-
-        # Count files
-        vault_path = Path(self.config['vault_path'])
-        all_files = list(vault_path.rglob("*.md"))
-        total_files = len([f for f in all_files if not f.name.startswith('.')])
-
-        dashboard.update_processing(
-            total_files=total_files,
-            processed_files=0,
-            failed_files=0,
-            current_file='Initializing...',
-            current_stage='Starting'
-        )
-
-        # Run with Live display
+        # Run processor with dashboard enabled
         try:
+            console.print("\n[bold green]✅ Starting processing with live dashboard...[/bold green]\n")
+            processor.main(enable_dashboard=True, dashboard_update_interval=self.update_interval)
             with Live(dashboard.render(), refresh_per_second=1.0/self.update_interval, screen=True) as live:
                 logger.info(f"Processing {total_files} files from {vault_path}")
 
@@ -448,9 +436,10 @@ class EnhancedRunner:
             self.signal_handler(None, None)
         except Exception as e:
             logger.error(f"Error during processing: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.running = False
-            dashboard.stop()
 
     def main(self):
         """Main entry point"""
@@ -506,7 +495,7 @@ class EnhancedRunner:
 
 if __name__ == "__main__":
     try:
-        runner = EnhancedRunner(update_interval=30)
+        runner = EnhancedRunner(update_interval=15)
         runner.main()
     except Exception as e:
         console.print(f"\n[bold red]Fatal error: {e}[/bold red]")
