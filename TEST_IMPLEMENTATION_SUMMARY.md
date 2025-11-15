@@ -256,6 +256,10 @@ Tests run automatically on:
 
 ## Test Coverage Gaps (Future Work)
 
+> **📋 Note:** All TODO items have been consolidated into [PROJECT_TODO.md](PROJECT_TODO.md)
+>
+> See the master TODO list for current status and priorities.
+
 ### Priority 1 - High Impact
 - [ ] Analytics module tests (enhanced_analytics.py)
 - [ ] Dashboard tests (live_dashboard.py)

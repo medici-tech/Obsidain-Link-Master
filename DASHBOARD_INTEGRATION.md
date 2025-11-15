@@ -152,6 +152,10 @@ python3 run_with_dashboard.py
 
 ## Future Enhancements
 
+> **📋 Note:** All enhancement tasks have been moved to [PROJECT_TODO.md](PROJECT_TODO.md)
+>
+> Check the master TODO list for current priorities and status.
+
 Possible improvements:
 - [ ] Add progress bar visualization
 - [ ] Export dashboard data to file
