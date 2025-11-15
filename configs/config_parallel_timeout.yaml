@@ -1,0 +1,54 @@
+# Parallel Processing Configuration with Timeout Management
+# Optimized for preventing stuck workers and improving efficiency
+
+# Vault settings
+vault_path: "/Users/medici/Documents/MediciVault"
+backup_folder: "_backups"
+dry_run: false
+fast_dry_run: false
+max_backups: 5
+
+# Processing settings
+max_siblings: 5
+batch_size: 5  # Reduced batch size for better timeout management
+max_retries: 2
+parallel_workers: 3
+file_ordering: "recent"
+resume_enabled: true
+cache_enabled: true
+interactive_mode: false
+analytics_enabled: true
+
+# Quality control
+confidence_threshold: 0.8
+enable_review_queue: true
+review_queue_path: "reviews/"
+
+# Ollama configuration with aggressive timeouts
+ollama_base_url: "http://localhost:11434"
+ollama_model: "qwen3:8b"
+ollama_temperature: 0.1
+ollama_max_tokens: 1024
+ollama_context_window: 8192
+ollama_timeout: 30  # 30 seconds per AI call
+ollama_retry_timeout: 60  # 1 minute max retry time
+ollama_max_reasoning_time: 90  # 90 seconds max reasoning time
+
+# Timeout settings
+file_processing_timeout: 60  # 60 seconds max per file
+batch_timeout_multiplier: 2  # Batch timeout = file_timeout * 2
+
+# Speed tracking
+track_speed_comparison: true
+track_parallel_efficiency: true
+
+# Performance optimization
+enable_parallel_processing: true
+enable_timeout_management: true
+enable_progress_tracking: true
+
+
+
+
+
+
