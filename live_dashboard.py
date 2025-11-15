@@ -29,7 +29,7 @@ class LiveDashboard:
     Optimized for M4 MacBook Air with performance & efficiency core tracking
     """
 
-    def __init__(self, update_interval: int = 30):
+    def __init__(self, update_interval: int = 15):
         self.console = Console()
         self.update_interval = update_interval
         self.running = False
@@ -635,7 +635,7 @@ class LiveDashboard:
 # Global dashboard instance
 _dashboard_instance: Optional[LiveDashboard] = None
 
-def get_dashboard(update_interval: int = 30) -> LiveDashboard:
+def get_dashboard(update_interval: int = 15) -> LiveDashboard:
     """Get or create the global dashboard instance"""
     global _dashboard_instance
     if _dashboard_instance is None:

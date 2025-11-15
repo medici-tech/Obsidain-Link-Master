@@ -1,0 +1,92 @@
+# Parallel Processing Configuration for Maximum Speed
+# Optimized for 16GB MacBook Air with batch processing and parallel workers
+
+# Core settings
+vault_path: /Users/medici/Documents/MediciVault
+dry_run: false  # Real processing for speed comparison
+fast_dry_run: false  # Use full AI analysis for accuracy
+
+# Analytics and reporting
+analytics_enabled: true
+generate_report: true
+detailed_analytics: true
+comprehensive_reporting: true
+auto_open_report: true
+include_before_after_files: true
+include_detailed_reasoning: true
+
+# PARALLEL PROCESSING SETTINGS - OPTIMIZED FOR SPEED
+batch_size: 7                    # Process 7 files per batch
+parallel_workers: 3              # Use 3 parallel threads
+max_retries: 2                   # Reduced for speed
+ollama_max_retries: 2            # Reduced for speed
+
+# Quality control settings
+confidence_threshold: 0.8  # Files below this confidence will be flagged for review
+enable_review_queue: true  # Enable manual review for low confidence files
+review_queue_path: "reviews/"  # Directory to store files needing review
+
+# Ollama Model Settings - Optimized for Speed
+ollama_base_url: http://localhost:11434
+ollama_model: qwen3:8b
+ollama_temperature: 0.1
+ollama_max_tokens: 1024           # Reduced for speed
+ollama_context_window: 8192       # Reduced for speed
+ollama_timeout: 300              # 5 minutes per file (reduced from 600)
+ollama_retry_timeout: 450        # 7.5 minutes for retries (reduced from 900)
+ollama_max_reasoning_time: 600    # 10 minutes absolute maximum (reduced from 1200)
+
+# File processing
+file_ordering: 'recent'  # Process newest files first
+resume_enabled: true
+cache_enabled: true
+
+# Speed tracking and comparison
+track_processing_time: true
+track_confidence_scores: true
+track_reasoning: true
+track_file_sizes: true
+track_word_counts: true
+track_categorization_accuracy: true
+track_before_after_changes: true
+track_ai_reasoning: true
+track_speed_comparison: true  # Track speed vs sequential processing
+track_parallel_efficiency: true  # Track parallel processing efficiency
+
+# Enhanced reporting with speed metrics
+include_file_details: true
+include_processing_metrics: true
+include_performance_stats: true
+include_error_analysis: true
+include_moc_distribution: true
+include_confidence_analysis: true
+include_time_analysis: true
+include_content_analysis: true
+include_before_after_comparison: true
+include_ai_reasoning_analysis: true
+include_speed_comparison: true  # Compare with sequential processing
+include_parallel_efficiency: true  # Show parallel processing benefits
+
+# Report settings
+report_format: 'html'
+include_charts: true
+include_timeline: true
+include_breakdown: true
+include_recommendations: true
+include_before_after_visualization: true
+include_reasoning_breakdown: true
+include_speed_breakdown: true  # Show speed improvements
+
+# Memory optimization - OPTIMIZED FOR 16GB RAM
+memory_optimization: true
+max_memory_usage: 12              # Max 12GB for processing (leave 4GB for system)
+enable_memory_monitoring: true    # Enable memory monitoring
+memory_check_interval: 30         # Check memory every 30 seconds
+
+# Parallel processing optimization
+enable_parallel_processing: true  # Enable actual parallel processing
+enable_batch_processing: true     # Enable batch processing
+parallel_batch_size: 7           # Files per batch
+max_parallel_workers: 3           # Maximum parallel workers
+parallel_timeout: 1800           # 30 minutes timeout for parallel processing
+

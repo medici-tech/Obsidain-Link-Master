@@ -1,17 +1,16 @@
+# Obsidian Auto-Linker Dependencies
+# Core dependencies for AI-powered Obsidian vault processing
+=======
 # Enhanced Obsidian Auto-Linker Dependenciesas
 # Core dependencies for AI-powered Obsidian vault processing
+ main
 
-<<<<<<< HEAD
-# YAML configuration parsing
-PyYAML>=6.0
-=======
 # Core dependencies
 requests>=2.25.0
 pyyaml>=6.0
 tqdm>=4.65.0
 psutil>=5.8.0
 rich>=13.0.0
->>>>>>> 6a1e4d76e263faeeeb26065d2ead661e2060d63c
 
 # HTTP requests for Ollama API
 requests>=2.32.0
@@ -24,6 +23,14 @@ psutil>=7.1.0
 
 # File system operations and path handling
 pathlib2>=2.3.7; python_version < "3.4"
+typing-extensions>=4.0.0; python_version < "3.8"
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Configuration validation
+pydantic>=2.0.0
 
 # JSON handling (built-in, but ensuring compatibility)
 # json - built-in module

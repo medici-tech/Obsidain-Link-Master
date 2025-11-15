@@ -1,0 +1,178 @@
+================================================================================
+OBSIDIAN AUTO-LINKER - CODE DUPLICATION ANALYSIS SUMMARY
+================================================================================
+Analysis Date: 2025-11-14
+Files Analyzed: 4 (2,076 total lines)
+
+CRITICAL FINDINGS:
+- 40 instances of config.get() scattered across codebase
+- 10 JSON load/dump operations with repeated error handling
+- 9 path validation checks with inconsistent patterns
+- 6 interactive menu prompts with duplicated logic
+
+================================================================================
+TOP 10 CODE DUPLICATION ISSUES (Ranked by Impact)
+================================================================================
+
+1. YAML CONFIG LOADING - CRITICAL
+   Locations: obsidian_auto_linker_enhanced.py:31-39, run_with_dashboard.py:74-76, 127-134
+   Frequency: 3 duplications
+   Lines Affected: ~30 lines
+   Issue: Same try/except pattern for loading config.yaml
+   Solution: Create load_yaml_config() utility function
+   Effort: LOW
+   Priority: 1
+
+2. OLLAMA CONNECTION CHECK - HIGH
+   Locations: run.py:265-286, run_with_dashboard.py:98-118
+   Frequency: 2 duplications
+   Lines Affected: ~30 lines
+   Issue: Identical API call logic, only output differs (print vs logger)
+   Solution: Create check_ollama_connection() utility function
+   Effort: LOW
+   Priority: 2
+
+3. JSON FILE LOADING - HIGH
+   Locations: obsidian_auto_linker_enhanced.py:225-240, 268-283
+              run.py:349-366
+   Frequency: 3 duplications
+   Lines Affected: ~45 lines
+   Issue: Repeated try/except blocks for loading JSON with validation
+   Solution: Create load_json_file() utility function with generic error handling
+   Effort: LOW
+   Priority: 3
+
+4. CONFIG VALUE EXTRACTION - HIGH
+   Locations: obsidian_auto_linker_enhanced.py:41-64 (24 extractions)
+              Plus 5 more file path extractions scattered
+   Frequency: 6+ duplications (file path alone)
+   Lines Affected: ~30 lines
+   Issue: Magic string defaults scattered throughout, no single source of truth
+   Solution: Create ProcessingConfig, OllamaConfig, FilePathConfig dataclasses
+   Effort: MEDIUM
+   Priority: 4
+
+5. INTERACTIVE MENU INPUT - MEDIUM-HIGH
+   Locations: run.py:156-183 (file ordering)
+              run.py:185-209 (processing mode)
+              run.py:211-235 (batch size)
+              run_with_dashboard.py:153-166, 168-184, 186-198 (same menus)
+   Frequency: 6 duplications
+   Lines Affected: ~150 lines
+   Issue: Same menu logic repeated 6 times, inconsistent between print and console
+   Solution: Create get_choice_from_menu() generic menu handler
+   Effort: MEDIUM
+   Priority: 5
+
+6. JSON SAVE PATTERN - MEDIUM
+   Locations: obsidian_auto_linker_enhanced.py:252-258, 297-300, 812-813
+   Frequency: 3 duplications
+   Lines Affected: ~15 lines
+   Issue: Repeated try/except blocks for saving JSON files
+   Solution: Create save_json_file() utility function
+   Effort: LOW
+   Priority: 6
+
+7. FILE PATH CONSTRUCTION - MEDIUM
+   Locations: obsidian_auto_linker_enhanced.py:224, 250, 267, 295, 811 (5 times)
+   Frequency: 6 occurrences
+   Lines Affected: ~6 lines
+   Issue: Same config.get() calls for file paths repeated multiple times
+   Solution: Use FilePathConfig dataclass (from issue #4)
+   Effort: LOW
+   Priority: 7
+
+8. PATH VALIDATION - MEDIUM
+   Locations: run.py:75-77, run_with_dashboard.py:149-151,
+              obsidian_auto_linker_enhanced.py:343
+   Frequency: 3 duplications
+   Lines Affected: ~9 lines
+   Issue: Mixed use of os.path and pathlib.Path, inconsistent error messages
+   Solution: Create validate_path() utility function
+   Effort: LOW
+   Priority: 8
+
+9. LOGGER INITIALIZATION - MEDIUM
+   Locations: run_with_dashboard.py:40-45, obsidian_auto_linker_enhanced.py:24-28
+   Frequency: 2 duplications
+   Lines Affected: ~10 lines
+   Issue: Logger setup repeated, dashboard handler attachment varies
+   Solution: Create initialize_logger() utility function
+   Effort: LOW
+   Priority: 9
+
+10. DATA STRUCTURE INITIALIZATION - LOW-MEDIUM
+    Locations: obsidian_auto_linker_enhanced.py:157-179, 901-908
+               run.py:23-33
+    Frequency: Multiple instances
+    Lines Affected: ~40 lines
+    Issue: Mutable dictionaries initialized at module level without structure
+    Solution: Create ProgressData, AnalyticsData, FileStats dataclasses
+    Effort: LOW
+    Priority: 10
+
+================================================================================
+REFACTORING ROADMAP
+================================================================================
+
+PHASE 1: UTILITY FUNCTIONS (Effort: 2-3 hours, Impact: HIGH)
+  [ ] Create config_utils.py with:
+      - load_yaml_config()
+      - check_ollama_connection()
+      - load_json_file()
+      - save_json_file()
+      - Configuration dataclasses
+  Files affected: obsidian_auto_linker_enhanced.py, run.py, run_with_dashboard.py
+  Estimated lines eliminated: 150+
+
+PHASE 2: UI UTILITIES (Effort: 1-2 hours, Impact: MEDIUM)
+  [ ] Create ui_utils.py with:
+      - get_choice_from_menu() generic handler
+      - Menu configuration constants
+  Files affected: run.py, run_with_dashboard.py
+  Estimated lines eliminated: 80+
+
+PHASE 3: TYPE SAFETY (Effort: 1 hour, Impact: MEDIUM)
+  [ ] Add type hints to utility functions
+  [ ] Update logger_config.py with initialize_logger()
+  [ ] Convert mutable state to dataclasses
+
+PHASE 4: TESTING (Effort: 2-3 hours, Impact: HIGH)
+  [ ] Test config loading with various YAML formats
+  [ ] Test Ollama connection checks
+  [ ] Test all menu interactions
+  [ ] Run Fast Dry Run mode to verify
+  [ ] Run Full Dry Run mode to verify
+
+================================================================================
+QUICK WINS (Can implement today)
+================================================================================
+
+1. Extract load_yaml_config() - saves 30 lines, fixes 3 locations
+2. Extract check_ollama_connection() - saves 30 lines, fixes 2 locations
+3. Extract load_json_file() - saves 45 lines, fixes 3 locations
+4. Extract save_json_file() - saves 15 lines, fixes 3 locations
+
+Total: ~120 lines eliminated, 11 duplications fixed in ~3 hours
+
+================================================================================
+METRICS
+================================================================================
+
+Current State:
+- Total lines analyzed: 2,076
+- Duplicated lines (estimated): 150-200 (7-10% of codebase)
+- config.get() calls: 40 (should be ~10 with config objects)
+- JSON load patterns: 5 (should be 1-2)
+- Menu prompts: 6 (should be 1 generic function)
+
+After Refactoring:
+- Estimated lines removed: 250-300
+- config.get() calls: ~10
+- Duplication eliminated: 80-90%
+- Code maintainability: Significantly improved
+- Time to add new features: 20-30% faster
+
+================================================================================
+DETAILED ANALYSIS AVAILABLE IN: CODE_DUPLICATION_ANALYSIS.md
+================================================================================
