@@ -7,9 +7,12 @@ Optimized for MacBook Air M4 2025
 import time
 import psutil
 import threading
+import json
+import csv
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from collections import deque
+from pathlib import Path
 from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
@@ -393,6 +396,181 @@ class LiveDashboard:
         filled = int(width * percentage / 100)
         bar = "█" * filled + "░" * (width - filled)
         return f"[{color}]{bar}[/{color}]"
+
+    def export_to_json(self, filepath: str = "dashboard_metrics.json") -> bool:
+        """
+        Export dashboard metrics to JSON file
+
+        Args:
+            filepath: Path to save JSON file (default: dashboard_metrics.json)
+
+        Returns:
+            True if export successful, False otherwise
+        """
+        try:
+            export_data = {
+                'export_timestamp': datetime.now().isoformat(),
+                'session_duration': str(datetime.now() - self.stats['start_time']),
+
+                # Processing metrics
+                'processing': {
+                    'total_files': self.stats['total_files'],
+                    'processed_files': self.stats['processed_files'],
+                    'failed_files': self.stats['failed_files'],
+                    'skipped_files': self.stats['skipped_files'],
+                    'success_rate': round((self.stats['processed_files'] / self.stats['total_files'] * 100)
+                                        if self.stats['total_files'] > 0 else 0, 2),
+                },
+
+                # AI metrics
+                'ai_performance': {
+                    'total_requests': self.stats['ai_requests'],
+                    'successful_requests': self.stats['ai_success'],
+                    'failed_requests': self.stats['ai_failures'],
+                    'timeouts': self.stats['ai_timeouts'],
+                    'retries': self.stats['ai_retries'],
+                    'avg_response_time': round(sum(self.stats['ai_response_times']) / len(self.stats['ai_response_times']), 3)
+                                        if self.stats['ai_response_times'] else 0,
+                    'avg_tokens': round(self.stats['avg_tokens'], 1),
+                    'tokens_per_second': round(self.stats['tokens_per_second'], 2),
+                    'success_rate': round((self.stats['ai_success'] / self.stats['ai_requests'] * 100)
+                                        if self.stats['ai_requests'] > 0 else 0, 2),
+                },
+
+                # Cache metrics
+                'cache_performance': {
+                    'hits': self.stats['cache_hits'],
+                    'misses': self.stats['cache_misses'],
+                    'hit_rate': round((self.stats['cache_hits'] / (self.stats['cache_hits'] + self.stats['cache_misses']) * 100)
+                                    if (self.stats['cache_hits'] + self.stats['cache_misses']) > 0 else 0, 2),
+                    'size_mb': round(self.stats['cache_size_mb'], 2),
+                    'entries': self.stats['cache_entries'],
+                    'time_saved_seconds': round(self.stats['time_saved_seconds'], 1),
+                },
+
+                # System resources
+                'system_resources': {
+                    'cpu_percent': round(self.stats['cpu_percent'], 1),
+                    'memory_percent': round(self.stats['memory_percent'], 1),
+                    'memory_used_gb': round(self.stats['memory_used_gb'], 2),
+                    'disk_read_mb_per_sec': round(self.stats['disk_read_mb'], 2),
+                    'disk_write_mb_per_sec': round(self.stats['disk_write_mb'], 2),
+                    'network_sent_kb_per_sec': round(self.stats['network_sent_kb'], 2),
+                    'network_recv_kb_per_sec': round(self.stats['network_recv_kb'], 2),
+                    'temperature': round(self.stats['temperature'], 1) if self.stats['temperature'] else 0,
+                },
+
+                # MOC distribution
+                'moc_distribution': dict(self.stats['moc_distribution']),
+
+                # Error summary
+                'errors': {
+                    'total_errors': len(self.stats['recent_errors']),
+                    'error_types': dict(self.stats['error_types']),
+                    'recent_errors': list(self.stats['recent_errors']),
+                },
+            }
+
+            # Write to file
+            with open(filepath, 'w') as f:
+                json.dump(export_data, f, indent=2, default=str)
+
+            print(f"✅ Dashboard metrics exported to {filepath}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Failed to export metrics to JSON: {e}")
+            return False
+
+    def export_to_csv(self, filepath: str = "dashboard_metrics.csv") -> bool:
+        """
+        Export dashboard metrics to CSV file
+
+        Args:
+            filepath: Path to save CSV file (default: dashboard_metrics.csv)
+
+        Returns:
+            True if export successful, False otherwise
+        """
+        try:
+            with open(filepath, 'w', newline='') as f:
+                writer = csv.writer(f)
+
+                # Header
+                writer.writerow(['Metric Category', 'Metric Name', 'Value', 'Unit'])
+                writer.writerow([])
+
+                # Session info
+                writer.writerow(['Session', 'Export Timestamp', datetime.now().isoformat(), ''])
+                writer.writerow(['Session', 'Duration', str(datetime.now() - self.stats['start_time']), ''])
+                writer.writerow([])
+
+                # Processing metrics
+                writer.writerow(['Processing', 'Total Files', self.stats['total_files'], 'files'])
+                writer.writerow(['Processing', 'Processed Files', self.stats['processed_files'], 'files'])
+                writer.writerow(['Processing', 'Failed Files', self.stats['failed_files'], 'files'])
+                writer.writerow(['Processing', 'Skipped Files', self.stats['skipped_files'], 'files'])
+                writer.writerow(['Processing', 'Success Rate',
+                               round((self.stats['processed_files'] / self.stats['total_files'] * 100)
+                                   if self.stats['total_files'] > 0 else 0, 2), '%'])
+                writer.writerow([])
+
+                # AI metrics
+                writer.writerow(['AI Performance', 'Total Requests', self.stats['ai_requests'], 'requests'])
+                writer.writerow(['AI Performance', 'Successful Requests', self.stats['ai_success'], 'requests'])
+                writer.writerow(['AI Performance', 'Failed Requests', self.stats['ai_failures'], 'requests'])
+                writer.writerow(['AI Performance', 'Timeouts', self.stats['ai_timeouts'], 'timeouts'])
+                writer.writerow(['AI Performance', 'Retries', self.stats['ai_retries'], 'retries'])
+                writer.writerow(['AI Performance', 'Avg Response Time',
+                               round(sum(self.stats['ai_response_times']) / len(self.stats['ai_response_times']), 3)
+                               if self.stats['ai_response_times'] else 0, 'seconds'])
+                writer.writerow(['AI Performance', 'Avg Tokens', round(self.stats['avg_tokens'], 1), 'tokens'])
+                writer.writerow(['AI Performance', 'Tokens Per Second', round(self.stats['tokens_per_second'], 2), 'tokens/s'])
+                writer.writerow(['AI Performance', 'Success Rate',
+                               round((self.stats['ai_success'] / self.stats['ai_requests'] * 100)
+                                   if self.stats['ai_requests'] > 0 else 0, 2), '%'])
+                writer.writerow([])
+
+                # Cache metrics
+                writer.writerow(['Cache', 'Hits', self.stats['cache_hits'], 'hits'])
+                writer.writerow(['Cache', 'Misses', self.stats['cache_misses'], 'misses'])
+                writer.writerow(['Cache', 'Hit Rate',
+                               round((self.stats['cache_hits'] / (self.stats['cache_hits'] + self.stats['cache_misses']) * 100)
+                                   if (self.stats['cache_hits'] + self.stats['cache_misses']) > 0 else 0, 2), '%'])
+                writer.writerow(['Cache', 'Size', round(self.stats['cache_size_mb'], 2), 'MB'])
+                writer.writerow(['Cache', 'Entries', self.stats['cache_entries'], 'entries'])
+                writer.writerow(['Cache', 'Time Saved', round(self.stats['time_saved_seconds'], 1), 'seconds'])
+                writer.writerow([])
+
+                # System resources
+                writer.writerow(['System', 'CPU Usage', round(self.stats['cpu_percent'], 1), '%'])
+                writer.writerow(['System', 'Memory Usage', round(self.stats['memory_percent'], 1), '%'])
+                writer.writerow(['System', 'Memory Used', round(self.stats['memory_used_gb'], 2), 'GB'])
+                writer.writerow(['System', 'Disk Read', round(self.stats['disk_read_mb'], 2), 'MB/s'])
+                writer.writerow(['System', 'Disk Write', round(self.stats['disk_write_mb'], 2), 'MB/s'])
+                writer.writerow(['System', 'Network Sent', round(self.stats['network_sent_kb'], 2), 'KB/s'])
+                writer.writerow(['System', 'Network Received', round(self.stats['network_recv_kb'], 2), 'KB/s'])
+                if self.stats['temperature']:
+                    writer.writerow(['System', 'Temperature', round(self.stats['temperature'], 1), '°C'])
+                writer.writerow([])
+
+                # MOC distribution
+                writer.writerow(['MOC Distribution', '', '', ''])
+                for category, count in self.stats['moc_distribution'].items():
+                    writer.writerow(['MOC', category, count, 'files'])
+                writer.writerow([])
+
+                # Error summary
+                writer.writerow(['Errors', 'Total Errors', len(self.stats['recent_errors']), 'errors'])
+                for error_type, count in self.stats['error_types'].items():
+                    writer.writerow(['Error Type', error_type, count, 'occurrences'])
+
+            print(f"✅ Dashboard metrics exported to {filepath}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Failed to export metrics to CSV: {e}")
+            return False
 
     def render(self) -> Layout:
         """Render the complete dashboard"""
