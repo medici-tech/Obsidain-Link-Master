@@ -10,7 +10,7 @@ echo ""
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
     echo "❌ Virtual environment not found!"
-    echo "Please run ./setup_new_computer.sh first"
+    echo "Please run ./scripts/setup_new_computer.sh first"
     exit 1
 fi
 

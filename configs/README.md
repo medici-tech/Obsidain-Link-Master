@@ -64,9 +64,28 @@ This directory contains specialized configuration presets for different use case
   - `secondary_model: qwen2.5:3b` (simple files)
   - `model_switching_threshold: 1000` words
 
-**`config_default_extended.yaml`**
-- Extended default configuration
-- Additional settings for advanced users
+**`config_default_extended.yaml`** ⚠️ DEPRECATED
+- Redundant with config_extended_timeout.yaml
+- Not referenced by any scripts
+- Recommend using config_extended_timeout.yaml instead
+- Status: Candidate for removal
+
+## Configuration Status
+
+### ✅ Actively Used Configurations
+- **config_detailed_analytics.yaml** - Used by `run_detailed_analytics.py`
+- **config_extended_timeout.yaml** - Used by `run_extended_timeout.py`
+- **config_hybrid_models.yaml** - Used by `scripts/intelligent_model_selector.py`
+- **config_qwen3_maximum_detail.yaml** - Used by `run_ultra_detailed.py`
+
+### 📝 Template Configurations
+- **config_fast.yaml** - Template for `scripts/optimize_performance.py` generation
+- **config_ultra_fast.yaml** - Template for `scripts/optimize_performance.py` generation
+- These are copied/modified when running the optimization script
+
+### ❌ Unused/Deprecated Configurations
+- **config_default_extended.yaml** - Not referenced anywhere, redundant functionality
+  - Recommended action: Remove in next cleanup
 
 ## Usage
 
