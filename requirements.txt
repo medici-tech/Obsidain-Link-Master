@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 # Obsidian Auto-Linker Dependencies
+=======
+# Core dependencies for AI-powered Obsidian vault processing
+>>>>>>> Stashed changes
 
 # Core dependencies
 requests>=2.25.0
