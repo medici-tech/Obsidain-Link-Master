@@ -25,10 +25,9 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     Anthropic = None
 
-# Add scripts directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
-from cache_utils import BoundedCache, create_bounded_cache
-from incremental_processing import FileHashTracker, create_hash_tracker
+# Import utilities from scripts directory
+from scripts.cache_utils import BoundedCache, IncrementalTracker
+from scripts.incremental_processing import FileHashTracker
 
 # Load config
 try:
@@ -51,7 +50,6 @@ from config_utils import (
     get_file_size_kb,
     get_file_size_category
 )
-from cache_utils import BoundedCache, IncrementalTracker
 
 # Initialize logger
 logger = get_logger(__name__)

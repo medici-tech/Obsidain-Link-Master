@@ -1,47 +1,44 @@
 # Enhanced Obsidian Auto-Linker Dependencies
 # Core dependencies for AI-powered Obsidian vault processing
+# Python 3.9+ required
+
+# === CORE DEPENDENCIES ===
+# HTTP requests for Ollama API
+requests>=2.32.0
 
 # YAML configuration parsing
 PyYAML>=6.0
 
-# HTTP requests for Ollama API
-# Obsidian Auto-Linker Dependencies
-# Core dependencies for AI-powered Obsidian vault processing
-
-# Core dependencies
-requests>=2.32.0
-pyyaml>=6.0
+# Progress bars for file processing
 tqdm>=4.67.0
+
+# Rich terminal UI for dashboard
 rich>=13.0.0
 
-# System monitoring and process management
+# System monitoring and resource tracking
 psutil>=7.1.0
-rich>=13.0.0
 
-# Claude API support (optional, only needed if using ai_provider: claude)
+# Configuration validation with type safety
+pydantic>=2.0.0
+
+# === OPTIONAL DEPENDENCIES ===
+# Claude API support (only needed if using ai_provider: claude in config)
 anthropic>=0.18.0
 
-# File system operations and path handling
+# Enhanced terminal output (Windows compatibility)
+colorama>=0.4.6
+
+# === PYTHON VERSION COMPATIBILITY ===
+# Backports for older Python versions
 pathlib2>=2.3.7; python_version < "3.4"
 typing-extensions>=4.0.0; python_version < "3.8"
 
-# Testing dependencies
-pytest>=7.0.0
-pytest-cov>=4.0.0
-
-# Configuration validation
-pydantic>=2.0.0
-
-# Optional: Enhanced terminal output
-colorama>=0.4.6
-
-# Optional: Better YAML handling
-ruamel.yaml>=0.17.0
-
-# Optional: Enhanced file watching
-watchdog>=3.0.0
-
-# Development dependencies (optional)
-# pytest>=7.0.0
-# black>=23.0.0
-# flake8>=6.0.0
+# === INSTALLATION NOTES ===
+# For development and testing, also install:
+#   pip install -r requirements-test.txt
+#
+# For production use only:
+#   pip install -r requirements.txt
+#
+# Verify installation:
+#   python -c "import requests, yaml, rich, pydantic; print('✓ All dependencies installed')"
