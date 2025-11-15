@@ -13,7 +13,7 @@
 ```bash
 git clone <repository-url>
 cd "Obsidain Link Master"
-./setup_new_computer.sh
+./scripts/setup_new_computer.sh
 ```
 
 ### 2. Configure Your Vault

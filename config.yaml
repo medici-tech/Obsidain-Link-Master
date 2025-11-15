@@ -58,6 +58,11 @@ dry_run_timeout: 120  # 2 minutes for dry runs
 file_ordering: 'recent'
 resume_enabled: true
 cache_enabled: true
+cache_max_size: 10000  # Maximum number of cache entries (LRU eviction)
+cache_max_memory_mb: 100.0  # Maximum cache memory usage in MB
+incremental_processing: true  # Skip files with unchanged content (90%+ faster reruns)
+incremental_hash_file: '.file_hashes.json'  # File to store content hashes
+force_reprocess: false  # Force reprocessing even if file unchanged
 
 # Extended timeout tracking
 track_processing_time: true

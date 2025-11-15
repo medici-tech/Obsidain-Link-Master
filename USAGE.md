@@ -21,7 +21,7 @@ python3 obsidian_auto_linker_enhanced.py
 ### If you get import errors:
 1. **Run the setup script:**
    ```bash
-   python3 setup_ide.py
+   python3 scripts/setup_ide.py
    ```
 
 2. **Configure your IDE:**

@@ -1,5 +1,13 @@
 # 🧹 File Cleanup and Organization Plan
 
+> **⚠️ DEPRECATED:** This file has been consolidated into [PROJECT_TODO.md](PROJECT_TODO.md)
+>
+> Please refer to the master TODO list for up-to-date task tracking.
+
+---
+
+# Original Content (For Reference)
+
 ## 📊 Current Issues Found:
 
 ### 🔄 Duplicate Files:

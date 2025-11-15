@@ -6,6 +6,7 @@ Processes conversations and creates MOC-based wiki structure
 
 import os
 import re
+import sys
 import yaml  # pyright: ignore[reportMissingModuleSource]
 import json
 import shutil
@@ -20,6 +21,20 @@ import requests
 from tqdm import tqdm
 import fnmatch
 
+# Add scripts directory to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
+from cache_utils import BoundedCache, create_bounded_cache
+from incremental_processing import FileHashTracker, create_hash_tracker
+
+# Load config
+try:
+    with open('config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    if config is None:
+        config = {}
+except Exception as e:
+    print(f"Error loading config: {e}")
+    config = {}
 # Import logging and dashboard
 from logger_config import get_logger, setup_logging
 from live_dashboard import LiveDashboard
@@ -54,6 +69,8 @@ FILE_ORDERING = config.get('file_ordering', 'recent')
 # Budget alert removed for local LLM (free to use)
 RESUME_ENABLED = config.get('resume_enabled', True)
 CACHE_ENABLED = config.get('cache_enabled', True)
+INCREMENTAL_PROCESSING = config.get('incremental_processing', True)
+FORCE_REPROCESS = config.get('force_reprocess', False)
 INTERACTIVE_MODE = config.get('interactive_mode', True)
 ANALYTICS_ENABLED = config.get('analytics_enabled', True)
 
@@ -197,10 +214,20 @@ progress_data = {
     'failed_files': set(),
     'current_batch': 0,
     'total_batches': 0,
-    'last_update': None
+    'last_update': None,
+    # Enhanced resume: per-file stages
+    'file_stages': {}  # {filepath: {'stage': 'pending'|'analyzing'|'linking'|'completed'|'failed', 'timestamp': str}}
 }
 progress_lock = threading.RLock()  # Thread-safe progress updates
 
+# Cache for AI responses (BoundedCache with LRU eviction)
+ai_cache = create_bounded_cache(config)
+
+# Threading locks for parallel processing
+cache_lock = threading.Lock()
+progress_lock = threading.Lock()
+analytics_lock = threading.Lock()
+hash_tracker_lock = threading.Lock()
 # Cache for AI responses (bounded with LRU eviction)
 ai_cache = BoundedCache(max_size_mb=MAX_CACHE_SIZE_MB, max_entries=MAX_CACHE_ENTRIES)
 
@@ -248,6 +275,32 @@ def load_progress() -> None:
         return
 
     progress_file = config.get('progress_file', '.processing_progress.json')
+    if os.path.exists(progress_file):
+        try:
+            with open(progress_file, 'r') as f:
+                data = json.load(f)
+                if data and isinstance(data, dict):
+                    progress_data['processed_files'] = set(data.get('processed_files', []))
+                    progress_data['failed_files'] = set(data.get('failed_files', []))
+                    progress_data['current_batch'] = data.get('current_batch', 0)
+                    progress_data['file_stages'] = data.get('file_stages', {})
+                    print(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
+                    if progress_data['file_stages']:
+                        stages_summary = {}
+                        for filepath, stage_data in progress_data['file_stages'].items():
+                            stage = stage_data.get('stage', 'unknown')
+                            stages_summary[stage] = stages_summary.get(stage, 0) + 1
+                        print(f"   📋 File stages: {dict(stages_summary)}")
+                else:
+                    progress_data['processed_files'] = set()
+                    progress_data['failed_files'] = set()
+                    progress_data['current_batch'] = 0
+        except (json.JSONDecodeError, ValueError):
+            progress_data['processed_files'] = set()
+            progress_data['failed_files'] = set()
+            progress_data['current_batch'] = 0
+        except Exception as e:
+            print(f"⚠️  Could not load progress file: {e}")
     data = load_json_file(progress_file, default={})
 
     if data and isinstance(data, dict):
@@ -267,6 +320,67 @@ def save_progress() -> None:
         return
 
     progress_file = config.get('progress_file', '.processing_progress.json')
+    try:
+        with open(progress_file, 'w') as f:
+            json.dump({
+                'processed_files': list(progress_data['processed_files']),
+                'failed_files': list(progress_data['failed_files']),
+                'current_batch': progress_data['current_batch'],
+                'file_stages': progress_data.get('file_stages', {}),
+                'last_update': datetime.now().isoformat()
+            }, f, indent=2)
+    except Exception as e:
+        print(f"⚠️  Could not save progress: {e}")
+
+
+def set_file_stage(filepath: str, stage: str):
+    """
+    Set the processing stage for a file
+
+    Args:
+        filepath: Path to file
+        stage: Stage name ('pending', 'analyzing', 'linking', 'completed', 'failed')
+    """
+    if not RESUME_ENABLED:
+        return
+
+    with progress_lock:
+        progress_data['file_stages'][filepath] = {
+            'stage': stage,
+            'timestamp': datetime.now().isoformat()
+        }
+
+
+def get_file_stage(filepath: str) -> str:
+    """
+    Get the current processing stage for a file
+
+    Args:
+        filepath: Path to file
+
+    Returns:
+        Stage name, or 'pending' if not tracked
+    """
+    if not RESUME_ENABLED:
+        return 'pending'
+
+    with progress_lock:
+        stage_data = progress_data.get('file_stages', {}).get(filepath, {})
+        return stage_data.get('stage', 'pending')
+
+
+def load_cache():
+    """Load AI cache from file (handled by BoundedCache init)"""
+    if not CACHE_ENABLED:
+        return
+
+    # Cache is already loaded in create_bounded_cache()
+    # Just display info
+    cache_size = len(ai_cache)
+    if cache_size > 0:
+        stats = ai_cache.get_stats()
+        print(f"💾 Loaded cache: {cache_size} entries (max: {stats['max_size']})")
+        print(f"   Hit rate: {stats['hit_rate']}, Evictions: {stats['evictions']}")
     data = {
         'processed_files': list(progress_data['processed_files']),
         'failed_files': list(progress_data['failed_files']),
@@ -298,6 +412,13 @@ def save_cache() -> None:
         return
 
     cache_file = config.get('cache_file', '.ai_cache.json')
+    try:
+        ai_cache.save_to_file(cache_file)
+        stats = ai_cache.get_stats()
+        print(f"💾 Saved cache: {len(ai_cache)} entries")
+        print(f"   Stats - Hits: {stats['hits']}, Misses: {stats['misses']}, Evictions: {stats['evictions']}")
+    except Exception as e:
+        print(f"⚠️  Could not save cache: {e}")
     cache_data = ai_cache.to_dict()
     save_json_file(cache_file, cache_data)
 
@@ -466,6 +587,15 @@ def analyze_with_balanced_ai(content: str, existing_notes: Dict[str, str]) -> Op
     # Check cache first
     cache_start = time.time()
     content_hash = get_content_hash(content)
+    with cache_lock:
+        cached_result = ai_cache.get(content_hash)
+        if cached_result is not None:
+            with analytics_lock:
+                analytics['cache_hits'] += 1
+            return cached_result
+
+    with analytics_lock:
+        analytics['cache_misses'] += 1
     if ai_cache.has(content_hash):
         cached_result = ai_cache.get(content_hash)
         analytics['cache_hits'] += 1
@@ -549,6 +679,10 @@ Return ONLY the JSON object, no explanations or other text."""
             else:
                 logger.error(f"  ❌ No JSON found in response")
                 return None
+        
+        # Cache the result
+        with cache_lock:
+            ai_cache.set(content_hash, result)
         
         # Cache the result (with automatic LRU eviction if needed)
         ai_cache.set(content_hash, result)
@@ -981,6 +1115,71 @@ def generate_analytics_report() -> None:
         with open('analytics_report.html', 'w') as f:
             f.write(html_report)
 
+
+def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_num, total_files, start_time):
+    """
+    Thread-safe wrapper for processing a single file
+    Used by ThreadPoolExecutor for parallel processing
+
+    Args:
+        file_path: Path to file to process
+        existing_notes: Dictionary of existing notes
+        stats: Statistics dictionary (will be updated with lock)
+        hash_tracker: FileHashTracker instance
+        file_num: Current file number (for progress display)
+        total_files: Total number of files
+        start_time: Processing start time
+
+    Returns:
+        Tuple of (file_path, success, skip_reason)
+    """
+    current_file = os.path.basename(file_path)
+
+    try:
+        # Check if file has changed (incremental processing)
+        if INCREMENTAL_PROCESSING and hash_tracker and not FORCE_REPROCESS:
+            with hash_tracker_lock:
+                if not hash_tracker.has_changed(file_path):
+                    print(f"  ⏭️  {current_file}: Skipping (unchanged)")
+                    with progress_lock:
+                        stats['already_processed'] += 1
+                    set_file_stage(file_path, 'completed')  # Mark as completed (unchanged)
+                    return (file_path, True, 'unchanged')
+
+        # Set stage: analyzing
+        set_file_stage(file_path, 'analyzing')
+
+        # Show progress
+        show_progress(current_file, "Processing", file_num, total_files, start_time)
+
+        # Process the file (this includes linking)
+        set_file_stage(file_path, 'linking')
+        file_processed = process_conversation(file_path, existing_notes, stats)
+
+        # Update hash tracker after processing
+        if INCREMENTAL_PROCESSING and hash_tracker:
+            with hash_tracker_lock:
+                hash_tracker.update_hash(file_path, success=file_processed)
+                hash_tracker.save()
+
+        if file_processed:
+            set_file_stage(file_path, 'completed')
+            show_progress(current_file, "Completed", file_num, total_files, start_time)
+            return (file_path, True, None)
+        else:
+            set_file_stage(file_path, 'completed')  # Still mark as completed even if skipped
+            show_progress(current_file, "Skipped", file_num, total_files, start_time)
+            return (file_path, False, 'skipped')
+
+    except Exception as e:
+        print(f"❌ Error processing {current_file}: {e}")
+        set_file_stage(file_path, 'failed')
+        with progress_lock:
+            stats['failed'] += 1
+        return (file_path, False, f'error: {e}')
+
+
+def main():
         logger.info(f"📊 Analytics report saved to: analytics_report.html")
 
 def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
@@ -1014,6 +1213,15 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     # Load progress, cache, and incremental tracker
     load_progress()
     load_cache()
+
+    # Initialize incremental processing tracker
+    hash_tracker = None
+    if INCREMENTAL_PROCESSING:
+        hash_tracker = create_hash_tracker(config)
+        print(f"📝 Incremental processing enabled")
+        print(f"   Tracking {len(hash_tracker)} files from previous runs")
+        if FORCE_REPROCESS:
+            print(f"   ⚠️  Force reprocess enabled - will process all files")
     load_incremental_tracker()
 
     # Initialize stats
@@ -1243,6 +1451,48 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         print(f"   📊 Limited to first {DRY_RUN_LIMIT} files for analysis")
         print("   Set dry_run: false in config.yaml to process for real\n")
     else:
+        print(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
+        print(f"   Backups stored in: {BACKUP_FOLDER}\n")
+    
+    # Process files (sequential or parallel based on PARALLEL_WORKERS)
+    if PARALLEL_WORKERS > 1:
+        print(f"📝 Processing files with {PARALLEL_WORKERS} parallel workers...\n")
+    else:
+        print("📝 Processing files sequentially...\n")
+
+    analytics['total_files'] = len(all_files)
+
+    # Choose processing mode based on workers
+    if PARALLEL_WORKERS > 1:
+        # PARALLEL PROCESSING MODE
+        print(f"⚡ Parallel mode: Processing up to {PARALLEL_WORKERS} files simultaneously")
+
+        with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
+            # Submit all files for processing
+            future_to_file = {}
+            for i, file_path in enumerate(all_files, 1):
+                # Check dry run limit before submitting
+                if DRY_RUN and i > DRY_RUN_LIMIT:
+                    break
+
+                future = executor.submit(
+                    process_file_wrapper,
+                    file_path,
+                    existing_notes,
+                    stats,
+                    hash_tracker,
+                    i,
+                    len(all_files),
+                    start_time
+                )
+                future_to_file[future] = (file_path, i)
+
+            # Process completed futures as they finish
+            processed_count = 0
+            for future in as_completed(future_to_file):
+                file_path, file_num = future_to_file[future]
+                current_file = os.path.basename(file_path)
+
         logger.warning(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
         logger.info(f"   Backups stored in: {BACKUP_FOLDER}\n")
 
@@ -1297,32 +1547,116 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 print("4. ❌ Stop processing")
                 
                 try:
-                    choice = input("\nChoose option (1-4): ").strip()
-                    
-                    if choice == "1":
-                        print("⚠️  SWITCHING TO REAL PROCESSING")
-                        print("   This will modify your files!")
-                        confirm = input("Are you sure? Type 'YES' to continue: ")
-                        if confirm == "YES":
-                            DRY_RUN = False
-                            print("✅ Real processing enabled - continuing with remaining files...")
-                        else:
-                            print("❌ Real processing cancelled")
+                    file_path_result, success, skip_reason = future.result()
+
+                    if success:
+                        processed_count += 1
+
+                    # Save progress after each file
+                    save_progress()
+                    with cache_lock:
+                        save_cache()
+
+                    # Show file summary
+                    print(f"\n📊 File {file_num} complete:")
+                    print(f"   ✅ Processed: {stats['processed']}")
+                    print(f"   ⏭️  Skipped: {stats['already_processed']}")
+                    print(f"   ❌ Failed: {stats['failed']}")
+                    print(f"   🔗 Links added: {stats.get('links_added', 0)}")
+                    print(f"   🏷️  Tags added: {stats.get('tags_added', 0)}")
+
+                except Exception as e:
+                    print(f"❌ Error processing {current_file}: {e}")
+                    stats['failed'] += 1
+
+    else:
+        # SEQUENTIAL PROCESSING MODE
+        processed_count = 0
+
+        for i, file_path in enumerate(all_files, 1):
+            current_file = os.path.basename(file_path)
+            print(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
+
+            # Check dry run limit
+            if DRY_RUN and i > DRY_RUN_LIMIT:
+                print(f"\n🛑 DRY RUN LIMIT REACHED ({DRY_RUN_LIMIT} files)")
+                print("=" * 60)
+                print("📊 DRY RUN SUMMARY")
+                print("=" * 60)
+                print(f"✅ Files analyzed: {i-1}")
+                print(f"📊 Would process: {stats['would_process']}")
+                print(f"⏭️  Already processed: {stats['already_processed']}")
+                print(f"❌ Failed: {stats['failed']}")
+                print(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)}")
+                print(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files")
+                print(f"⏱️  Time elapsed: {datetime.now() - start_time}")
+
+                if DRY_RUN_INTERACTIVE:
+                    print(f"\n🎛️  What would you like to do next?")
+                    print("1. 🚀 Start REAL processing (modify files)")
+                    print("2. 🔍 Continue dry run (analyze more files)")
+                    print("3. 📊 Generate analytics report and exit")
+                    print("4. ❌ Stop processing")
+
+                    try:
+                        choice = input("\nChoose option (1-4): ").strip()
+
+                        if choice == "1":
+                            print("⚠️  SWITCHING TO REAL PROCESSING")
+                            print("   This will modify your files!")
+                            confirm = input("Are you sure? Type 'YES' to continue: ")
+                            if confirm == "YES":
+                                DRY_RUN = False
+                                print("✅ Real processing enabled - continuing with remaining files...")
+                            else:
+                                print("❌ Real processing cancelled")
+                                break
+                        elif choice == "2":
+                            print("✅ Continuing dry run...")
+                            # Continue with dry run (no change needed)
+                        elif choice == "3":
+                            print("📊 Generating analytics report...")
                             break
-                    elif choice == "2":
-                        print("✅ Continuing dry run...")
-                        # Continue with dry run (no change needed)
-                    elif choice == "3":
-                        print("📊 Generating analytics report...")
-                        break
-                    elif choice == "4":
-                        print("❌ Processing stopped by user")
-                        break
-                    else:
-                        print("⚠️  Invalid choice, continuing dry run...")
-                except EOFError:
-                    print("⚠️  Non-interactive mode, continuing dry run...")
+                        elif choice == "4":
+                            print("❌ Processing stopped by user")
+                            break
+                        else:
+                            print("⚠️  Invalid choice, continuing dry run...")
+                    except EOFError:
+                        print("⚠️  Non-interactive mode, continuing dry run...")
+                else:
+                    print("📊 Dry run limit reached - generating analytics report...")
+                    break
+
+            # Check if file has changed (incremental processing)
+            if INCREMENTAL_PROCESSING and hash_tracker and not FORCE_REPROCESS:
+                if not hash_tracker.has_changed(file_path):
+                    print(f"  ⏭️  Skipping (unchanged since last run)")
+                    stats['already_processed'] += 1
+                    set_file_stage(file_path, 'completed')  # Mark as completed (unchanged)
+                    continue
+
+            # Set stage: analyzing
+            set_file_stage(file_path, 'analyzing')
+
+            # Show progress
+            show_progress(current_file, "Processing", processed_count, total_files, start_time)
+
+            # Process the file (this includes linking)
+            set_file_stage(file_path, 'linking')
+            file_processed = process_conversation(file_path, existing_notes, stats)
+
+            # Update hash tracker after processing
+            if INCREMENTAL_PROCESSING and hash_tracker:
+                hash_tracker.update_hash(file_path, success=file_processed)
+                hash_tracker.save()
+
+            if file_processed:
+                set_file_stage(file_path, 'completed')
+                processed_count += 1
+                show_progress(current_file, "Completed", processed_count, total_files, start_time)
             else:
+                set_file_stage(file_path, 'completed')  # Still mark as completed even if skipped
                 print("📊 Dry run limit reached - generating analytics report...")
                 break
         
@@ -1364,6 +1698,14 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             # Save progress after each file
             save_progress()
             save_cache()
+
+            # Show file summary
+            print(f"\n📊 File {i} complete:")
+            print(f"   ✅ Processed: {stats['processed']}")
+            print(f"   ⏭️  Skipped: {stats['already_processed']}")
+            print(f"   ❌ Failed: {stats['failed']}")
+            print(f"   🔗 Links added: {stats['links_added']}")
+            print(f"   🏷️  Tags added: {stats['tags_added']}")
             save_incremental_tracker()
 
         # Update dashboard after processing
@@ -1410,6 +1752,16 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     print(f"❌ Failed: {stats['failed']}")
     print(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)} (below {CONFIDENCE_THRESHOLD:.0%} threshold)")
     print(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files flagged for manual review")
+
+    # Incremental processing stats
+    if INCREMENTAL_PROCESSING and hash_tracker:
+        inc_stats = hash_tracker.get_stats()
+        print(f"\n📝 Incremental Processing:")
+        print(f"   ⏭️  Skipped (unchanged): {inc_stats['unchanged_files']} files ({inc_stats['skip_rate']}% skip rate)")
+        print(f"   🔄 Changed: {inc_stats['changed_files']} files")
+        print(f"   ✨ New: {inc_stats['new_files']} files")
+        print(f"   💾 Tracking: {inc_stats['total_tracked_files']} files total")
+
     # Cost tracking removed for local LLM
     logger.info("")
 
