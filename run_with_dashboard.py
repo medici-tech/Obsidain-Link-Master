@@ -226,6 +226,191 @@ class EnhancedRunner:
 
         return True
 
+    def _process_files_with_dashboard(self, processor, vault_path: Path, live):
+        """Process files with live dashboard updates"""
+        import time
+
+        # Wrap call_ollama to track AI requests
+        original_call_ollama = processor.call_ollama
+
+        def wrapped_call_ollama(prompt, system_prompt="", max_retries=None):
+            """Wrapped version that tracks AI requests"""
+            start_time = time.time()
+            try:
+                result = original_call_ollama(prompt, system_prompt, max_retries)
+                elapsed = time.time() - start_time
+
+                # Track successful request
+                success = result != ""
+                dashboard.add_ai_request(elapsed, success, tokens=len(result.split()) if result else 0)
+
+                return result
+            except Exception as e:
+                elapsed = time.time() - start_time
+                dashboard.add_ai_request(elapsed, False, timeout=True)
+                raise
+
+        # Replace with wrapped version
+        processor.call_ollama = wrapped_call_ollama
+
+        # Wrap cache operations
+        original_analyze = processor.analyze_with_balanced_ai
+
+        def wrapped_analyze(content, existing_notes):
+            """Wrapped version that tracks cache hits/misses"""
+            content_hash = processor.get_content_hash(content)
+
+            # Check if cached
+            if content_hash in processor.ai_cache:
+                dashboard.add_cache_hit()
+            else:
+                dashboard.add_cache_miss()
+
+            return original_analyze(content, existing_notes)
+
+        # Replace with wrapped version
+        processor.analyze_with_balanced_ai = wrapped_analyze
+
+        # Apply configuration to processor module
+        processor.VAULT_PATH = str(vault_path)
+        processor.DRY_RUN = self.config.get('dry_run', True)
+        processor.FAST_DRY_RUN = self.config.get('fast_dry_run', False)
+        processor.BATCH_SIZE = self.config.get('batch_size', 1)
+        processor.FILE_ORDERING = self.config.get('file_ordering', 'recent')
+
+        # Load progress and cache
+        processor.load_progress()
+        processor.load_cache()
+
+        # Update cache stats in dashboard
+        cache_size_mb = 0
+        if hasattr(processor, 'ai_cache') and processor.ai_cache:
+            import sys
+            cache_size_mb = sys.getsizeof(str(processor.ai_cache)) / (1024 * 1024)
+        dashboard.update_cache_stats(cache_size_mb, len(processor.ai_cache) if hasattr(processor, 'ai_cache') else 0)
+
+        # Get all notes
+        console.print("[cyan]Loading existing notes...[/cyan]")
+        existing_notes = processor.get_all_notes(str(vault_path))
+        console.print(f"[green]Found {len(existing_notes)} existing notes[/green]\n")
+
+        # Find files to process
+        all_files = []
+        for root, dirs, files in os.walk(str(vault_path)):
+            if processor.config.get('backup_folder', '_backups') in root:
+                continue
+            for file in files:
+                if file.endswith('.md') and not file.startswith(('📍', 'MOC')):
+                    file_path = os.path.join(root, file)
+                    if processor.should_process_file(file_path):
+                        all_files.append(file_path)
+
+        # Filter out already processed files if resume is enabled
+        if processor.RESUME_ENABLED:
+            all_files = [f for f in all_files if f not in processor.progress_data['processed_files']]
+
+        # Order files
+        all_files = processor.order_files(all_files, processor.FILE_ORDERING)
+
+        # Update dashboard with total
+        dashboard.update_processing(
+            total_files=len(all_files),
+            processed_files=0,
+            failed_files=0,
+            current_file='Ready to start',
+            current_stage='Initialized'
+        )
+        live.update(dashboard.render())
+
+        console.print(f"[cyan]Processing {len(all_files)} files...[/cyan]\n")
+
+        # Statistics
+        stats = {
+            'processed': 0,
+            'already_processed': 0,
+            'failed': 0,
+            'would_process': 0,
+            'links_added': 0,
+            'tags_added': 0
+        }
+
+        # Process files one by one
+        start_time = time.time()
+        for i, file_path in enumerate(all_files, 1):
+            if not self.running:
+                break
+
+            filename = os.path.basename(file_path)
+            file_size_kb = os.path.getsize(file_path) / 1024
+
+            # Update dashboard
+            dashboard.update_processing(
+                current_file=filename,
+                current_stage='Analyzing',
+                processed_files=stats['processed']
+            )
+            dashboard.add_activity(f"Processing {filename}", success=True)
+            live.update(dashboard.render())
+
+            # Process the file
+            file_start = time.time()
+            try:
+                result = processor.process_conversation(file_path, existing_notes, stats)
+                file_time = time.time() - file_start
+
+                # Update dashboard with timing
+                dashboard.add_file_processing_time(int(file_size_kb), file_time)
+
+                # Try to extract MOC category from analytics if available
+                if hasattr(processor, 'analytics') and processor.analytics.get('moc_distribution'):
+                    # Get the most recent MOC (last one added)
+                    moc_dist = processor.analytics['moc_distribution']
+                    if moc_dist:
+                        # Find which MOC this file likely belongs to
+                        # This is a simple heuristic - in reality the file determines its own MOC
+                        for moc in moc_dist.keys():
+                            dashboard.add_moc_category(moc)
+                            break
+
+                if result:
+                    dashboard.add_activity(f"✓ Processed {filename} ({file_time:.1f}s)", success=True)
+                else:
+                    dashboard.add_activity(f"⏭ Skipped {filename}", success=True)
+
+            except Exception as e:
+                file_time = time.time() - file_start
+                stats['failed'] += 1
+                dashboard.add_error("processing_error", str(e))
+                dashboard.add_activity(f"✗ Failed {filename}: {str(e)[:50]}", success=False)
+                logger.error(f"Error processing {filename}: {e}")
+
+            # Update final stats
+            dashboard.update_processing(
+                processed_files=stats['processed'],
+                failed_files=stats['failed']
+            )
+            live.update(dashboard.render())
+
+            # Save progress periodically
+            if i % 5 == 0:
+                processor.save_progress()
+                processor.save_cache()
+
+        # Final update
+        elapsed = time.time() - start_time
+        dashboard.update_processing(
+            current_file='Complete',
+            current_stage='Finished'
+        )
+        live.update(dashboard.render())
+
+        console.print(f"\n[bold green]✓ Processing Complete[/bold green]")
+        console.print(f"[green]Processed: {stats['processed']} | Failed: {stats['failed']} | Time: {elapsed:.1f}s[/green]\n")
+
+        # Save final progress
+        processor.save_progress()
+        processor.save_cache()
+
     def run_with_dashboard(self):
         """Run processing with live dashboard"""
         logger.info("Starting Obsidian Auto-Linker with Live Dashboard")
@@ -241,6 +426,11 @@ class EnhancedRunner:
         try:
             console.print("\n[bold green]✅ Starting processing with live dashboard...[/bold green]\n")
             processor.main(enable_dashboard=True, dashboard_update_interval=self.update_interval)
+            with Live(dashboard.render(), refresh_per_second=1.0/self.update_interval, screen=True) as live:
+                logger.info(f"Processing {total_files} files from {vault_path}")
+
+                # Integrate with actual processing engine
+                self._process_files_with_dashboard(processor, vault_path, live)
 
         except KeyboardInterrupt:
             self.signal_handler(None, None)

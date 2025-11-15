@@ -1,17 +1,9 @@
-batch_size: 1
-custom_model_name: ''
-dry_run: True
-fast_dry_run: True
-file_ordering: 'recent'
-ollama_base_url: http://localhost:11434
-ollama_model: goekdenizguelmez/JOSIEFIED-Qwen3:latest
-vault_path: /Users/medici/Documents/MediciVault
 # Extended Timeout Configuration for Qwen3:8b
 # Prevents timeouts during active reasoning
 
 # Core settings
 vault_path: /Users/medici/Documents/MediciVault
-dry_run: true
+dry_run: false
 fast_dry_run: false
 
 # Analytics and reporting
@@ -28,15 +20,6 @@ batch_size: 1
 parallel_workers: 1
 max_retries: 5  # More retries for complex reasoning
 ollama_max_retries: 5
-
-# Quality control settings
-confidence_threshold: 0.8  # Files below this confidence will be flagged for review
-enable_review_queue: true  # Enable manual review for low confidence files
-review_queue_path: "reviews/"  # Directory to store files needing review
-
-# Dry run settings
-dry_run_limit: 10  # Maximum files to process in dry run mode
-dry_run_interactive: true  # Show interactive prompt after dry run limit
 
 # Qwen3:8b Model Settings - Extended Timeouts
 ollama_base_url: http://localhost:11434
