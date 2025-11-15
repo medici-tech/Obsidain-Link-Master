@@ -2,6 +2,7 @@
 
 **Last Updated:** 2024-11-15
 **Status:** Consolidated from multiple sources
+**Scope:** Local-only tool for personal Obsidian vault management with local Ollama AI
 
 ---
 
@@ -87,22 +88,20 @@
 - [x] Add real-time file processing updates
 - [x] Add activity logging
 
-#### 📝 Planned
+#### 📝 Planned (Local Development)
 - [ ] Add progress bar visualization
-- [ ] Export dashboard data to file
+- [ ] Export dashboard data to file (CSV/JSON)
 - [ ] Add performance benchmarking mode
 - [ ] Configurable dashboard refresh rate
 - [ ] Dashboard themes (light/dark mode)
-- [ ] Remote dashboard access (web interface)
 
 ### Analytics & Reporting
 
-#### 📝 To Do
-- [ ] Enhanced analytics module improvements
+#### 📝 To Do (Local Analysis)
 - [ ] Better MOC distribution visualization
 - [ ] Export analytics to CSV/JSON
 - [ ] Time-series performance tracking
-- [ ] Comparative analysis reports
+- [ ] Comparative analysis reports (multiple runs)
 
 ---
 
@@ -120,11 +119,9 @@
 - [x] **Troubleshooting guide** (TROUBLESHOOTING.md) - 900+ lines
 - [x] **Architecture documentation** (ARCHITECTURE.md) - 800+ lines
 
-### 📝 To Do
-- [ ] Contributing guide (CONTRIBUTING.md)
-- [ ] Performance tuning guide (detailed)
-- [ ] Changelog (CHANGELOG.md)
-- [ ] Code of Conduct
+### 📝 To Do (Personal Use)
+- [ ] Performance tuning guide (detailed optimization strategies)
+- [ ] Scripts directory README (document utility scripts)
 
 ---
 
@@ -137,12 +134,12 @@
 - [x] Security scanning with Bandit
 - [x] Test automation
 
-### 📝 To Do
-- [ ] Docker containerization
-- [ ] Release automation
-- [ ] Version tagging strategy
-- [ ] Changelog automation
-- [ ] Pre-commit hooks setup
+### 📝 To Do (Local Development)
+- [ ] Pre-commit hooks setup (auto-formatting, linting)
+- [ ] Dependency vulnerability scanning (safety, pip-audit)
+
+### 🔵 Optional
+- [ ] Docker containerization (for reproducible local environment)
 
 ---
 
@@ -174,12 +171,11 @@
 - [x] Security scanning in CI/CD
 - [x] Input validation in processing
 
-### 📝 To Do
-- [ ] Dependency vulnerability scanning
-- [ ] Secrets management review
-- [ ] Rate limiting for API calls
-- [ ] Data sanitization audit
+### 📝 To Do (Local Safety)
+- [ ] Dependency vulnerability scanning (local packages)
+- [ ] Data sanitization audit (markdown processing)
 - [ ] Backup verification improvements
+- [ ] Rate limiting for Ollama API (prevent overwhelming local service)
 
 ---
 
@@ -195,14 +191,13 @@
 
 ---
 
-## 🎓 Learning & Research
+## 🎓 Learning & Research (Local AI Improvements)
 
 ### 📝 To Do
-- [ ] Benchmark different AI models
-- [ ] Research better categorization algorithms
-- [ ] Explore graph-based linking strategies
-- [ ] Investigate semantic search integration
-- [ ] Study knowledge graph optimization
+- [ ] Benchmark different Ollama models (compare qwen, llama, mistral)
+- [ ] Research better categorization algorithms (for MOC assignment)
+- [ ] Explore graph-based linking strategies (based on content similarity)
+- [ ] Improve model selection criteria (better complexity detection)
 
 ---
 
@@ -225,17 +220,17 @@
 
 ### Medium-Term Goals (1 month)
 1. 📝 Increase test coverage to 70%+
-2. 📝 Complete code organization cleanup
-3. 📝 Add Docker support
-4. 📝 Implement all dashboard enhancements
-5. 📝 Create comprehensive documentation
+2. 📝 Complete code organization cleanup (remove deprecated files)
+3. 📝 Implement local dashboard enhancements (themes, export)
+4. 📝 Performance optimization and profiling
+5. 📝 Pre-commit hooks for development
 
-### Long-Term Goals (3+ months)
-1. 📝 Advanced analytics and reporting
-2. 📝 Performance optimization
-3. 📝 Web-based dashboard
-4. 📝 Plugin system for extensibility
-5. 📝 Multi-language support
+### Long-Term Goals (Ongoing Improvements)
+1. 📝 Advanced local analytics and reporting
+2. 📝 Memory and speed optimization for large vaults
+3. 📝 Better AI model selection and benchmarking
+4. 📝 Graph-based linking improvements
+5. 📝 Export capabilities (CSV/JSON for external analysis)
 
 ---
 
@@ -262,30 +257,37 @@ For each task to be considered complete:
 6. ✅ Code organization (DONE)
 
 ### 🟡 Important (Do Soon)
-1. Docker containerization
-2. Contributing guide
-3. Performance optimization (profiling)
-4. Bug fixes (known issues)
-5. End-to-end integration testing
-6. Remove deprecated config file
+1. Performance optimization (profiling slow operations)
+2. Bug fixes (known issues with large vaults, memory)
+3. End-to-end integration testing
+4. Remove deprecated config file
+5. Pre-commit hooks setup
+6. Scripts directory README
 
-### 🟢 Nice to Have (Do Later)
-1. Dashboard themes (light/dark mode)
-2. Remote dashboard access (web interface)
-3. Export analytics to CSV/JSON
-4. Advanced features (plugin system)
-5. Research items (semantic search, graph algorithms)
+### 🟢 Nice to Have (Future Enhancements)
+1. Dashboard themes (light/dark mode) - local terminal
+2. Export analytics to CSV/JSON - local analysis
+3. Performance benchmarking mode - local testing
+4. Better AI model selection - local Ollama models
+5. Graph-based linking - content similarity analysis
+
+### 🔵 Optional (Not Essential)
+1. Docker containerization - reproducible environment only
 
 ---
 
 ## 📝 Notes
 
+- **Local-Only Tool**: This project is designed for local development and use only
+  - All features focus on local Ollama AI models
+  - No remote/web interfaces or external services
+  - Optimized for personal vault management
 - All test-related tasks from TEST_IMPLEMENTATION_SUMMARY.md consolidated here
 - All cleanup tasks from cleanup_plan.md consolidated here
 - All dashboard tasks from DASHBOARD_INTEGRATION.md consolidated here
 - Deployment prerequisites from DEPLOYMENT.md noted but not included (one-time setup)
 
-**Next Review Date:** Check progress weekly
+**Next Review Date:** Check progress as needed
 **Maintainer:** Update as tasks complete
 
 ---
@@ -294,6 +296,7 @@ For each task to be considered complete:
 - ✅ = Completed
 - 🔄 = In Progress
 - 📝 = To Do
-- 🔴 = Critical Priority
+- 🔴 = Critical Priority (All Complete!)
 - 🟡 = Important Priority
 - 🟢 = Nice to Have
+- 🔵 = Optional (Not Essential)
