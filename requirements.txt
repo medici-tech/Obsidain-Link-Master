@@ -1,5 +1,9 @@
+# Obsidian Auto-Linker Dependencies
+# Core dependencies for AI-powered Obsidian vault processing
+=======
 # Enhanced Obsidian Auto-Linker Dependenciesas
 # Core dependencies for AI-powered Obsidian vault processing
+ main
 
 # Core dependencies
 requests>=2.25.0

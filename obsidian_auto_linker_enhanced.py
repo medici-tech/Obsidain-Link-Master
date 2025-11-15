@@ -32,6 +32,7 @@ from config_utils import (
     get_file_size_kb,
     get_file_size_category
 )
+from cache_utils import BoundedCache, IncrementalTracker
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -56,6 +57,13 @@ CACHE_ENABLED = config.get('cache_enabled', True)
 INTERACTIVE_MODE = config.get('interactive_mode', True)
 ANALYTICS_ENABLED = config.get('analytics_enabled', True)
 
+# Cache configuration
+MAX_CACHE_SIZE_MB = config.get('max_cache_size_mb', 1000)
+MAX_CACHE_ENTRIES = config.get('max_cache_entries', 10000)
+
+# Incremental processing configuration
+INCREMENTAL_ENABLED = config.get('incremental', False)
+INCREMENTAL_TRACKER_FILE = config.get('incremental_tracker_file', '.incremental_tracker.json')
 # Quality control settings
 CONFIDENCE_THRESHOLD = config.get('confidence_threshold', 0.8)
 ENABLE_REVIEW_QUEUE = config.get('enable_review_queue', True)
@@ -191,9 +199,13 @@ progress_data = {
     'total_batches': 0,
     'last_update': None
 }
+progress_lock = threading.RLock()  # Thread-safe progress updates
 
-# Cache for AI responses
-ai_cache = {}
+# Cache for AI responses (bounded with LRU eviction)
+ai_cache = BoundedCache(max_size_mb=MAX_CACHE_SIZE_MB, max_entries=MAX_CACHE_ENTRIES)
+
+# Incremental processing tracker
+incremental_tracker = IncrementalTracker()
 
 # 12 MOC System (enhanced with custom support)
 MOCS = {
@@ -268,17 +280,17 @@ def load_cache() -> None:
     if not CACHE_ENABLED:
         return
 
-    global ai_cache
     cache_file = config.get('cache_file', '.ai_cache.json')
-    ai_cache = load_json_file(cache_file, default={})
+    cache_data = load_json_file(cache_file, default={})
 
-    if ai_cache:
-        logger.info(f"💾 Loaded cache: {len(ai_cache)} cached responses")
+    if cache_data:
+        ai_cache.from_dict(cache_data)
+        logger.info(f"💾 Loaded cache: {len(cache_data)} cached responses")
 
         # Update dashboard with cache stats
-        if dashboard and os.path.exists(cache_file):
-            cache_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
-            dashboard.update_cache_stats(cache_size_mb, len(ai_cache))
+        if dashboard:
+            cache_stats = ai_cache.get_stats()
+            dashboard.update_cache_stats(cache_stats['size_mb'], cache_stats['entries'])
 
 def save_cache() -> None:
     """Save AI cache to file using config_utils"""
@@ -286,7 +298,26 @@ def save_cache() -> None:
         return
 
     cache_file = config.get('cache_file', '.ai_cache.json')
-    save_json_file(cache_file, ai_cache)
+    cache_data = ai_cache.to_dict()
+    save_json_file(cache_file, cache_data)
+
+def load_incremental_tracker() -> None:
+    """Load incremental tracker from file"""
+    if not INCREMENTAL_ENABLED:
+        return
+
+    tracker_data = load_json_file(INCREMENTAL_TRACKER_FILE, default={})
+    if tracker_data:
+        incremental_tracker.from_dict(tracker_data)
+        logger.info(f"📊 Loaded incremental tracker: {len(tracker_data.get('file_hashes', {}))} files tracked")
+
+def save_incremental_tracker() -> None:
+    """Save incremental tracker to file"""
+    if not INCREMENTAL_ENABLED:
+        return
+
+    tracker_data = incremental_tracker.to_dict()
+    save_json_file(INCREMENTAL_TRACKER_FILE, tracker_data)
 
 def get_content_hash(content: str) -> str:
     """Generate hash for content caching"""
@@ -435,12 +466,13 @@ def analyze_with_balanced_ai(content: str, existing_notes: Dict[str, str]) -> Op
     # Check cache first
     cache_start = time.time()
     content_hash = get_content_hash(content)
-    if content_hash in ai_cache:
+    if ai_cache.has(content_hash):
+        cached_result = ai_cache.get(content_hash)
         analytics['cache_hits'] += 1
         if dashboard:
             lookup_time = time.time() - cache_start
             dashboard.add_cache_hit(lookup_time)
-        return ai_cache[content_hash]
+        return cached_result
 
     analytics['cache_misses'] += 1
     if dashboard:
@@ -518,8 +550,8 @@ Return ONLY the JSON object, no explanations or other text."""
                 logger.error(f"  ❌ No JSON found in response")
                 return None
         
-        # Cache the result
-        ai_cache[content_hash] = result
+        # Cache the result (with automatic LRU eviction if needed)
+        ai_cache.set(content_hash, result)
 
         return result
     except Exception as e:
@@ -619,10 +651,11 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     file_start_time = time.time()
     filename = os.path.basename(file_path)
 
-    # Check if already processed
-    if file_path in progress_data['processed_files']:
-        stats['already_processed'] += 1
-        return False
+    # Check if already processed (thread-safe)
+    with progress_lock:
+        if file_path in progress_data['processed_files']:
+            stats['already_processed'] += 1
+            return False
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -640,7 +673,8 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
         if has_parent:
             logger.info(f"  ⏭️  Already processed - skipping")
             stats['already_processed'] += 1
-            progress_data['processed_files'].add(file_path)
+            with progress_lock:
+                progress_data['processed_files'].add(file_path)
             return False
 
     # Analyze with AI or Fast Dry Run
@@ -666,7 +700,8 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     if not ai_result:
         stats['failed'] += 1
         analytics['error_types']['ai_analysis_failed'] = analytics['error_types'].get('ai_analysis_failed', 0) + 1
-        progress_data['failed_files'].add(file_path)
+        with progress_lock:
+            progress_data['failed_files'].add(file_path)
         if dashboard:
             dashboard.add_error("ai_analysis_failed", f"Failed to analyze {filename}")
             dashboard.add_activity(f"Failed: {filename}", success=False)
@@ -776,7 +811,8 @@ Children: None yet"""
             stats['processed'] += 1
             stats['links_added'] += len(verified_siblings)
             stats['tags_added'] += len(hierarchical_tags)
-            progress_data['processed_files'].add(file_path)
+            with progress_lock:
+                progress_data['processed_files'].add(file_path)
 
             logger.info(f"  📄 Created new file: {os.path.basename(new_file_path)}")
             logger.info("  ✅ File updated")
@@ -800,6 +836,11 @@ Children: None yet"""
         processing_time = time.time() - file_start_time
         file_size_kb = len(content) / 1024
         dashboard.add_file_processing_time(file_size_kb, processing_time)
+
+    # Update incremental tracker with file hash
+    if INCREMENTAL_ENABLED:
+        content_hash = get_content_hash(content)
+        incremental_tracker.set_hash(file_path, content_hash)
 
     return True
 
@@ -970,10 +1011,11 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     # Initialize analytics
     analytics['start_time'] = datetime.now()
 
-    # Load progress and cache
+    # Load progress, cache, and incremental tracker
     load_progress()
     load_cache()
-    
+    load_incremental_tracker()
+
     # Initialize stats
     stats = {
         'processed': 0,
@@ -1035,7 +1077,27 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     # Filter out already processed files
     if RESUME_ENABLED:
         all_files = [f for f in all_files if f not in progress_data['processed_files']]
-    
+
+    # Filter out unchanged files (incremental processing)
+    if INCREMENTAL_ENABLED:
+        filtered_files = []
+        skipped_unchanged = 0
+        for file_path in all_files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                current_hash = get_content_hash(content)
+                if incremental_tracker.has_changed(file_path, current_hash):
+                    filtered_files.append(file_path)
+                else:
+                    skipped_unchanged += 1
+            except Exception as e:
+                # If we can't read file, include it for processing
+                filtered_files.append(file_path)
+        all_files = filtered_files
+        if skipped_unchanged > 0:
+            logger.info(f"📊 Incremental: Skipped {skipped_unchanged} unchanged files")
+
     # Order files based on configuration
     logger.info(f"📋 Ordering files by: {FILE_ORDERING}")
     all_files = order_files(all_files, FILE_ORDERING)
@@ -1184,8 +1246,11 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         logger.warning(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
         logger.info(f"   Backups stored in: {BACKUP_FOLDER}\n")
 
-    # Process files one at a time
-    logger.info("📝 Processing files one at a time...\n")
+    # Process files (parallel or sequential based on config)
+    if PARALLEL_WORKERS > 1:
+        logger.info(f"🚀 Processing files in parallel ({PARALLEL_WORKERS} workers)...\n")
+    else:
+        logger.info("📝 Processing files sequentially...\n")
 
     analytics['total_files'] = len(all_files)
 
@@ -1199,19 +1264,14 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             current_stage="Initializing"
         )
 
-    for i, file_path in enumerate(all_files, 1):
-        current_file = os.path.basename(file_path)
-        logger.info(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
+    if PARALLEL_WORKERS > 1:
+        # Parallel processing with ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        # Update dashboard
-        if dashboard:
-            dashboard.update_processing(
-                total_files=len(all_files),
-                processed_files=processed_count,
-                failed_files=stats['failed'],
-                current_file=current_file,
-                current_stage="Processing"
-            )
+        def process_file_wrapper(args):
+            """Wrapper for parallel processing"""
+            file_path, file_index, total = args
+            current_file = os.path.basename(file_path)
 
         print(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
         
@@ -1269,16 +1329,42 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         # Show progress
         show_progress(current_file, "Processing", processed_count, total_files, start_time)
 
-        # Process the file
-        if process_conversation(file_path, existing_notes, stats):
-            processed_count += 1
-            show_progress(current_file, "Completed", processed_count, total_files, start_time)
-        else:
-            show_progress(current_file, "Skipped", processed_count, total_files, start_time)
+            # Process results as they complete
+            for future in as_completed(future_to_file):
+                file_path, success = future.result()
+                if success:
+                    processed_count += 1
 
-        # Save progress after each file
-        save_progress()
-        save_cache()
+    else:
+        # Sequential processing (original logic)
+        for i, file_path in enumerate(all_files, 1):
+            current_file = os.path.basename(file_path)
+            logger.info(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
+
+            # Update dashboard
+            if dashboard:
+                dashboard.update_processing(
+                    total_files=len(all_files),
+                    processed_files=processed_count,
+                    failed_files=stats['failed'],
+                    current_file=current_file,
+                    current_stage="Processing"
+                )
+
+            # Show progress
+            show_progress(current_file, "Processing", processed_count, total_files, start_time)
+
+            # Process the file
+            if process_conversation(file_path, existing_notes, stats):
+                processed_count += 1
+                show_progress(current_file, "Completed", processed_count, total_files, start_time)
+            else:
+                show_progress(current_file, "Skipped", processed_count, total_files, start_time)
+
+            # Save progress after each file
+            save_progress()
+            save_cache()
+            save_incremental_tracker()
 
         # Update dashboard after processing
         if dashboard:
