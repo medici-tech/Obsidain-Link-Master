@@ -187,6 +187,7 @@ progress_data = {
     'total_batches': 0,
     'last_update': None
 }
+progress_lock = threading.RLock()  # Thread-safe progress updates
 
 # Cache for AI responses (bounded with LRU eviction)
 ai_cache = BoundedCache(max_size_mb=MAX_CACHE_SIZE_MB, max_entries=MAX_CACHE_ENTRIES)
@@ -581,10 +582,11 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     file_start_time = time.time()
     filename = os.path.basename(file_path)
 
-    # Check if already processed
-    if file_path in progress_data['processed_files']:
-        stats['already_processed'] += 1
-        return False
+    # Check if already processed (thread-safe)
+    with progress_lock:
+        if file_path in progress_data['processed_files']:
+            stats['already_processed'] += 1
+            return False
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -602,7 +604,8 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
         if has_parent:
             logger.info(f"  ⏭️  Already processed - skipping")
             stats['already_processed'] += 1
-            progress_data['processed_files'].add(file_path)
+            with progress_lock:
+                progress_data['processed_files'].add(file_path)
             return False
 
     # Analyze with AI or Fast Dry Run
@@ -628,7 +631,8 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     if not ai_result:
         stats['failed'] += 1
         analytics['error_types']['ai_analysis_failed'] = analytics['error_types'].get('ai_analysis_failed', 0) + 1
-        progress_data['failed_files'].add(file_path)
+        with progress_lock:
+            progress_data['failed_files'].add(file_path)
         if dashboard:
             dashboard.add_error("ai_analysis_failed", f"Failed to analyze {filename}")
             dashboard.add_activity(f"Failed: {filename}", success=False)
@@ -720,7 +724,8 @@ Children: None yet"""
             stats['processed'] += 1
             stats['links_added'] += len(verified_siblings)
             stats['tags_added'] += len(hierarchical_tags)
-            progress_data['processed_files'].add(file_path)
+            with progress_lock:
+                progress_data['processed_files'].add(file_path)
 
             logger.info(f"  📄 Created new file: {os.path.basename(new_file_path)}")
             logger.info("  ✅ File updated")
@@ -1029,8 +1034,11 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 30) ->
         logger.warning(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
         logger.info(f"   Backups stored in: {BACKUP_FOLDER}\n")
 
-    # Process files one at a time
-    logger.info("📝 Processing files one at a time...\n")
+    # Process files (parallel or sequential based on config)
+    if PARALLEL_WORKERS > 1:
+        logger.info(f"🚀 Processing files in parallel ({PARALLEL_WORKERS} workers)...\n")
+    else:
+        logger.info("📝 Processing files sequentially...\n")
 
     analytics['total_files'] = len(all_files)
 
@@ -1044,34 +1052,79 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 30) ->
             current_stage="Initializing"
         )
 
-    for i, file_path in enumerate(all_files, 1):
-        current_file = os.path.basename(file_path)
-        logger.info(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
+    if PARALLEL_WORKERS > 1:
+        # Parallel processing with ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        # Update dashboard
-        if dashboard:
-            dashboard.update_processing(
-                total_files=len(all_files),
-                processed_files=processed_count,
-                failed_files=stats['failed'],
-                current_file=current_file,
-                current_stage="Processing"
-            )
+        def process_file_wrapper(args):
+            """Wrapper for parallel processing"""
+            file_path, file_index, total = args
+            current_file = os.path.basename(file_path)
 
-        # Show progress
-        show_progress(current_file, "Processing", processed_count, total_files, start_time)
+            # Update dashboard
+            if dashboard:
+                dashboard.update_processing(
+                    total_files=total,
+                    processed_files=processed_count,
+                    failed_files=stats['failed'],
+                    current_file=current_file,
+                    current_stage="Processing"
+                )
 
-        # Process the file
-        if process_conversation(file_path, existing_notes, stats):
-            processed_count += 1
-            show_progress(current_file, "Completed", processed_count, total_files, start_time)
-        else:
-            show_progress(current_file, "Skipped", processed_count, total_files, start_time)
+            # Process the file
+            success = process_conversation(file_path, existing_notes, stats)
 
-        # Save progress after each file
-        save_progress()
-        save_cache()
-        save_incremental_tracker()
+            # Save progress after each file (thread-safe)
+            save_progress()
+            save_cache()
+            save_incremental_tracker()
+
+            return (file_path, success)
+
+        # Create thread pool and submit tasks
+        with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
+            # Submit all tasks
+            future_to_file = {
+                executor.submit(process_file_wrapper, (file_path, i, len(all_files))): file_path
+                for i, file_path in enumerate(all_files, 1)
+            }
+
+            # Process results as they complete
+            for future in as_completed(future_to_file):
+                file_path, success = future.result()
+                if success:
+                    processed_count += 1
+
+    else:
+        # Sequential processing (original logic)
+        for i, file_path in enumerate(all_files, 1):
+            current_file = os.path.basename(file_path)
+            logger.info(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
+
+            # Update dashboard
+            if dashboard:
+                dashboard.update_processing(
+                    total_files=len(all_files),
+                    processed_files=processed_count,
+                    failed_files=stats['failed'],
+                    current_file=current_file,
+                    current_stage="Processing"
+                )
+
+            # Show progress
+            show_progress(current_file, "Processing", processed_count, total_files, start_time)
+
+            # Process the file
+            if process_conversation(file_path, existing_notes, stats):
+                processed_count += 1
+                show_progress(current_file, "Completed", processed_count, total_files, start_time)
+            else:
+                show_progress(current_file, "Skipped", processed_count, total_files, start_time)
+
+            # Save progress after each file
+            save_progress()
+            save_cache()
+            save_incremental_tracker()
 
         # Update dashboard after processing
         if dashboard:

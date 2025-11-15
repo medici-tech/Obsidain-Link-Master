@@ -6,6 +6,7 @@ Optimized for MacBook Air M4 2025
 
 import sys
 import time
+import threading
 from collections import OrderedDict
 from typing import Any, Optional, Dict
 import json
@@ -36,7 +37,7 @@ class BoundedCache:
         self.max_entries = max_entries
         self.access_times = {}
         self.entry_sizes = {}
-        self._lock = None  # Will be set if threading is used
+        self._lock = threading.RLock()  # Reentrant lock for thread safety
 
     def get_size_mb(self) -> float:
         """Calculate current cache size in MB"""
@@ -63,13 +64,14 @@ class BoundedCache:
         Returns:
             Cached value or None if not found
         """
-        if key in self.cache:
-            # Update access time
-            self.access_times[key] = time.time()
-            # Move to end (most recently used)
-            self.cache.move_to_end(key)
-            return self.cache[key]
-        return None
+        with self._lock:
+            if key in self.cache:
+                # Update access time
+                self.access_times[key] = time.time()
+                # Move to end (most recently used)
+                self.cache.move_to_end(key)
+                return self.cache[key]
+            return None
 
     def set(self, key: str, value: Any) -> None:
         """
@@ -79,21 +81,22 @@ class BoundedCache:
             key: Cache key
             value: Value to cache
         """
-        # Estimate size of new entry
-        entry_size = self._estimate_size(value)
+        with self._lock:
+            # Estimate size of new entry
+            entry_size = self._estimate_size(value)
 
-        # Check if we need to evict
-        while (len(self.cache) >= self.max_entries or
-               (self.get_size_mb() + entry_size / (1024 * 1024)) > self.max_size_mb):
-            if len(self.cache) == 0:
-                break
-            self._evict_lru()
+            # Check if we need to evict
+            while (len(self.cache) >= self.max_entries or
+                   (self.get_size_mb() + entry_size / (1024 * 1024)) > self.max_size_mb):
+                if len(self.cache) == 0:
+                    break
+                self._evict_lru()
 
-        # Add new entry
-        self.cache[key] = value
-        self.access_times[key] = time.time()
-        self.entry_sizes[key] = entry_size
-        self.cache.move_to_end(key)
+            # Add new entry
+            self.cache[key] = value
+            self.access_times[key] = time.time()
+            self.entry_sizes[key] = entry_size
+            self.cache.move_to_end(key)
 
     def _evict_lru(self) -> None:
         """Evict least recently used entry"""
@@ -112,34 +115,45 @@ class BoundedCache:
 
     def has(self, key: str) -> bool:
         """Check if key exists in cache"""
-        return key in self.cache
+        with self._lock:
+            return key in self.cache
 
     def clear(self) -> None:
         """Clear all cache entries"""
-        self.cache.clear()
-        self.access_times.clear()
-        self.entry_sizes.clear()
+        with self._lock:
+            self.cache.clear()
+            self.access_times.clear()
+            self.entry_sizes.clear()
 
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics"""
-        return {
-            'entries': len(self.cache),
-            'size_mb': self.get_size_mb(),
-            'max_entries': self.max_entries,
-            'max_size_mb': self.max_size_mb,
-            'utilization_pct': (len(self.cache) / self.max_entries * 100) if self.max_entries > 0 else 0,
-            'size_utilization_pct': (self.get_size_mb() / self.max_size_mb * 100) if self.max_size_mb > 0 else 0
-        }
+        with self._lock:
+            return {
+                'entries': len(self.cache),
+                'size_mb': self.get_size_mb(),
+                'max_entries': self.max_entries,
+                'max_size_mb': self.max_size_mb,
+                'utilization_pct': (len(self.cache) / self.max_entries * 100) if self.max_entries > 0 else 0,
+                'size_utilization_pct': (self.get_size_mb() / self.max_size_mb * 100) if self.max_size_mb > 0 else 0
+            }
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert cache to dictionary for serialization"""
-        return dict(self.cache)
+        with self._lock:
+            return dict(self.cache)
 
     def from_dict(self, data: Dict[str, Any]) -> None:
         """Load cache from dictionary"""
-        self.clear()
-        for key, value in data.items():
-            self.set(key, value)
+        with self._lock:
+            self.cache.clear()
+            self.access_times.clear()
+            self.entry_sizes.clear()
+            for key, value in data.items():
+                # Don't use self.set() here to avoid nested locking
+                entry_size = self._estimate_size(value)
+                self.cache[key] = value
+                self.access_times[key] = time.time()
+                self.entry_sizes[key] = entry_size
 
     def save_to_file(self, filepath: str) -> None:
         """Save cache to JSON file"""
@@ -166,45 +180,53 @@ class IncrementalTracker:
     - MD5 hash tracking per file
     - Change detection
     - Last processed timestamp
+    - Thread-safe operations
     - Serializable state
     """
 
     def __init__(self):
         self.file_hashes = {}
         self.last_processed = {}
+        self._lock = threading.RLock()  # Reentrant lock for thread safety
 
     def get_hash(self, filepath: str) -> Optional[str]:
         """Get stored hash for file"""
-        return self.file_hashes.get(filepath)
+        with self._lock:
+            return self.file_hashes.get(filepath)
 
     def set_hash(self, filepath: str, content_hash: str) -> None:
         """Store hash for file"""
-        self.file_hashes[filepath] = content_hash
-        self.last_processed[filepath] = time.time()
+        with self._lock:
+            self.file_hashes[filepath] = content_hash
+            self.last_processed[filepath] = time.time()
 
     def has_changed(self, filepath: str, current_hash: str) -> bool:
         """Check if file has changed since last processing"""
-        stored_hash = self.get_hash(filepath)
-        if stored_hash is None:
-            return True  # Never processed
-        return stored_hash != current_hash
+        with self._lock:
+            stored_hash = self.file_hashes.get(filepath)
+            if stored_hash is None:
+                return True  # Never processed
+            return stored_hash != current_hash
 
     def clear(self) -> None:
         """Clear all tracked files"""
-        self.file_hashes.clear()
-        self.last_processed.clear()
+        with self._lock:
+            self.file_hashes.clear()
+            self.last_processed.clear()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
-        return {
-            'file_hashes': self.file_hashes,
-            'last_processed': self.last_processed
-        }
+        with self._lock:
+            return {
+                'file_hashes': self.file_hashes.copy(),
+                'last_processed': self.last_processed.copy()
+            }
 
     def from_dict(self, data: Dict[str, Any]) -> None:
         """Load from dictionary"""
-        self.file_hashes = data.get('file_hashes', {})
-        self.last_processed = data.get('last_processed', {})
+        with self._lock:
+            self.file_hashes = data.get('file_hashes', {})
+            self.last_processed = data.get('last_processed', {})
 
     def save_to_file(self, filepath: str) -> None:
         """Save tracker to JSON file"""
