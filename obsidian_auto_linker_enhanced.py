@@ -66,6 +66,13 @@ MAX_SIBLINGS = config.get('max_siblings', 5)
 BATCH_SIZE = config.get('batch_size', 1)
 MAX_RETRIES = config.get('max_retries', 3)
 PARALLEL_WORKERS = config.get('parallel_workers', 1)
+
+# Warn if parallel processing is configured but not implemented
+if PARALLEL_WORKERS > 1:
+    logger.warning(f"parallel_workers={PARALLEL_WORKERS} configured, but parallel processing not yet implemented")
+    logger.warning("Processing will run sequentially. See PHASE_2_3_STATUS.md for implementation status")
+    PARALLEL_WORKERS = 1  # Force sequential processing
+
 FILE_ORDERING = config.get('file_ordering', 'recent')
 RESUME_ENABLED = config.get('resume_enabled', True)
 CACHE_ENABLED = config.get('cache_enabled', True)
