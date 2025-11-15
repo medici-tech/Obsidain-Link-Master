@@ -1599,6 +1599,231 @@ def analyze_with_plugins(content, existing_notes):
 
 ---
 
+## Development Roadmap
+
+### Completed in v1.1.0 ✅
+
+#### Priority 1: Full Integration (COMPLETED)
+- ✅ Integrate dashboard with `obsidian_auto_linker_enhanced.py`
+- ✅ Replace print() with logger calls in core processor (91 replacements)
+- ✅ Hook up metrics collection during processing (25+ metrics)
+- ✅ Add dashboard support to run.py with interactive enable/disable
+- ✅ Lower dashboard update interval to 15 seconds
+
+#### Priority 2: Testing (COMPLETED)
+- ✅ Create pytest test suite (75 tests, 100% passing)
+- ✅ Add unit tests for config utilities (28 tests)
+- ✅ Add unit tests for Pydantic validation (26 tests)
+- ✅ Add unit tests for logging (10 tests)
+- ✅ Add integration tests (11 tests)
+- ✅ Add fixtures and test infrastructure
+- ⏳ Add CI/CD pipeline (pending - see Priority 3)
+
+#### Priority 5: Code Quality (PARTIALLY COMPLETED)
+- ✅ Add type hints to core functions (10+ functions)
+- ✅ Add Pydantic config validation with type safety
+- ✅ Fix all bare exception handlers
+- ✅ Refactor into modules (config_utils.py, config_schema.py)
+- ✅ Remove code duplication (8+ patterns eliminated)
+- ✅ Enhanced security for path validation
+- ✅ Created comprehensive documentation
+- ⏳ Setup mypy type checking (pending)
+- ⏳ Add comprehensive docstrings to all functions (pending)
+- ⏳ Complete modularization of monolithic processor (in progress)
+
+### Current Priorities (v1.2.0 Planning)
+
+#### Priority 3: Advanced Features
+**Timeline**: 2-4 weeks
+
+- [ ] Export dashboard metrics to CSV/JSON
+  - Real-time metric export during processing
+  - Historical run data persistence
+  - Analytics report generation
+
+- [ ] Historical run comparison
+  - Compare performance across runs
+  - Track improvements over time
+  - Identify regressions
+
+- [ ] Alert thresholds
+  - High CPU usage alerts (>80%)
+  - Error rate monitoring (>5%)
+  - Slow processing detection
+  - Memory leak detection
+
+- [ ] Web dashboard option
+  - Flask-based web UI
+  - Real-time metrics via WebSocket
+  - Mobile-responsive design
+  - Authentication/security
+
+- [ ] Mobile monitoring app (future)
+  - iOS/Android companion app
+  - Push notifications for alerts
+  - Remote monitoring capabilities
+
+#### Priority 4: Performance Optimization
+**Timeline**: 1-2 weeks
+
+- [ ] Implement lazy loading for large vaults
+  - Stream file discovery
+  - On-demand file reading
+  - Memory-efficient processing
+  - Batch processing improvements
+
+- [ ] Add parallel processing
+  - Use `parallel_workers` config (already exists)
+  - Thread-safe cache implementation
+  - Concurrent file processing
+  - Performance benchmarking
+
+- [ ] LRU cache with size limits
+  - Configurable cache size (MB limit)
+  - Automatic eviction policy
+  - Cache warmup strategies
+  - Persistent cache option
+
+- [ ] Optimize file I/O
+  - Buffered file reading
+  - Async I/O for large files
+  - Reduce disk seeks
+  - Compression for backups
+
+#### Priority 6: Production Readiness
+**Timeline**: 1 week
+
+- [ ] Set up CI/CD pipeline (GitHub Actions)
+  - Automated testing on push
+  - Code coverage reports
+  - Automated releases
+  - Docker containerization
+
+- [ ] Add comprehensive docstrings
+  - Google-style docstrings for all functions
+  - API documentation generation
+  - Usage examples in docs
+  - Inline code comments
+
+- [ ] Setup mypy type checking
+  - Strict type checking enabled
+  - Type stubs for dependencies
+  - CI integration
+  - Type coverage reports
+
+- [ ] Security audit
+  - Dependency vulnerability scanning
+  - SAST (Static Application Security Testing)
+  - Security best practices review
+  - Regular security updates
+
+### Future Enhancements (v2.0+)
+
+#### Long-term Goals
+- [ ] Plugin system for custom analyzers
+- [ ] Support for other note-taking apps (Notion, Roam)
+- [ ] Machine learning for better link suggestions
+- [ ] Collaborative vault processing
+- [ ] Cloud sync and backup
+- [ ] Visual knowledge graph viewer
+- [ ] Natural language queries
+- [ ] Integration with external APIs (Wikipedia, research databases)
+
+---
+
+## Feature Status Matrix
+
+| Feature | Status | Version | Notes |
+|---------|--------|---------|-------|
+| **Core Processing** | ✅ Complete | v1.0 | Production-ready |
+| **Live Dashboard** | ✅ Complete | v1.0 | 15s updates, M4-optimized |
+| **Dashboard Integration** | ✅ Complete | v1.1 | Integrated with run.py |
+| **Structured Logging** | ✅ Complete | v1.0 | File rotation, multiple handlers |
+| **Config Validation** | ✅ Complete | v1.1 | Pydantic type-safe validation |
+| **Path Security** | ✅ Enhanced | v1.1 | Comprehensive security checks |
+| **Test Suite** | ✅ Complete | v1.1 | 75 tests, 100% passing |
+| **Type Hints** | 🟡 Partial | v1.1 | Core functions covered |
+| **Code Deduplication** | ✅ Complete | v1.1 | Centralized utilities |
+| **Documentation** | ✅ Complete | v1.1 | CLAUDE.md, testing guides |
+| **Parallel Processing** | ⏳ Planned | v1.2 | Config exists, implementation pending |
+| **Web Dashboard** | ⏳ Planned | v1.3 | Terminal dashboard available |
+| **CI/CD** | ⏳ Planned | v1.2 | Framework ready |
+| **Cache Limits** | ⏳ Planned | v1.2 | Basic cache working |
+| **Lazy Loading** | ⏳ Planned | v1.2 | Performance optimization |
+| **Metric Export** | ⏳ Planned | v1.2 | Dashboard infrastructure ready |
+| **Alert System** | ⏳ Planned | v1.3 | Foundation in place |
+| **Plugin System** | 💡 Future | v2.0 | Architecture design needed |
+
+---
+
+## Configuration Reference
+
+### All Available Settings
+
+Based on `config_schema.py` Pydantic validation:
+
+```yaml
+# === CORE PROCESSING ===
+vault_path: /path/to/vault           # Required, validated for security
+dry_run: true                        # Default: true (safe mode)
+fast_dry_run: false                  # Default: false (requires dry_run=true)
+batch_size: 5                        # Range: 1-100, default: 1
+file_ordering: recent                # Options: recent|size|random|alphabetical
+
+# === OLLAMA CONFIGURATION ===
+ollama_base_url: http://localhost:11434  # Must start with http:// or https://
+ollama_model: qwen2.5:3b             # Default: qwen2.5:3b
+ollama_timeout: 15                   # Range: 5-300 seconds, default: 15
+ollama_max_retries: 1                # Range: 0-5, default: 1
+ollama_temperature: 0.3              # Range: 0.0-2.0, default: 0.3
+ollama_max_tokens: 200               # Range: 50-2000, default: 200
+
+# === FEATURES ===
+cache_enabled: true                  # Default: true
+resume_enabled: true                 # Default: true
+confirm_large_batches: false         # Default: false
+
+# === FILTERING ===
+exclude_patterns:                    # List of fnmatch patterns
+  - "*.tmp"
+  - ".*"
+  - "_*"
+
+include_patterns:                    # List of fnmatch patterns
+  - "*.md"
+
+folder_whitelist:                    # Optional: only process these folders
+  - "Conversations"
+  - "Notes"
+
+folder_blacklist:                    # Folders to skip
+  - "_backups"
+  - ".git"
+  - "Templates"
+
+# === ADVANCED ===
+parallel_workers: 1                  # Range: 1-16, default: 1 (future use)
+max_retries: 1                       # Range: 0-5, default: 1
+
+# === CUSTOM MOCs ===
+custom_mocs:                         # Optional: add custom categories
+  "My Category": "📍 My Category MOC"
+  "Research": "📍 Research MOC"
+```
+
+### Validation Rules
+
+All settings are validated by Pydantic with:
+- **Type checking**: Automatic type conversion and validation
+- **Range validation**: Numeric parameters have min/max limits
+- **URL validation**: ollama_base_url must be valid HTTP(S) URL
+- **Enum validation**: file_ordering must be one of allowed values
+- **Cross-field validation**: fast_dry_run requires dry_run=true
+- **Path security**: vault_path validated for security threats
+- **Helpful errors**: Clear error messages on validation failure
+
+---
+
 ## Changelog
 
 | Date | Version | Changes |
