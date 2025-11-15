@@ -21,6 +21,14 @@ import requests
 from tqdm import tqdm
 import fnmatch
 
+# Try to import anthropic for Claude API support (optional)
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    Anthropic = None
+
 # Add scripts directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
 from cache_utils import BoundedCache, create_bounded_cache
@@ -97,6 +105,36 @@ OLLAMA_TIMEOUT = config.get('ollama_timeout', 300)  # Default 5 minutes for Qwen
 OLLAMA_MAX_RETRIES = config.get('ollama_max_retries', 5)  # More retries for complex reasoning
 OLLAMA_TEMPERATURE = config.get('ollama_temperature', 0.1)
 OLLAMA_MAX_TOKENS = config.get('ollama_max_tokens', 1024)  # More tokens for detailed responses
+
+# AI Provider selection (ollama or claude)
+AI_PROVIDER = config.get('ai_provider', 'ollama')
+
+# Claude API configuration (only used if ai_provider: claude)
+CLAUDE_API_KEY = config.get('claude_api_key', os.environ.get('ANTHROPIC_API_KEY', ''))
+CLAUDE_MODEL = config.get('claude_model', 'claude-sonnet-4-5-20250929')
+CLAUDE_MAX_TOKENS = config.get('claude_max_tokens', 2048)
+CLAUDE_TEMPERATURE = config.get('claude_temperature', 0.1)
+CLAUDE_TIMEOUT = config.get('claude_timeout', 60)
+
+# Initialize Claude client if using Claude provider
+claude_client = None
+if AI_PROVIDER == 'claude':
+    if not ANTHROPIC_AVAILABLE:
+        print("⚠️  WARNING: anthropic package not installed. Install with: pip install anthropic")
+        print("⚠️  Falling back to Ollama provider")
+        AI_PROVIDER = 'ollama'
+    elif not CLAUDE_API_KEY:
+        print("⚠️  WARNING: Claude API key not found in config or ANTHROPIC_API_KEY env var")
+        print("⚠️  Falling back to Ollama provider")
+        AI_PROVIDER = 'ollama'
+    else:
+        try:
+            claude_client = Anthropic(api_key=CLAUDE_API_KEY)
+            print(f"✅ Claude API initialized (model: {CLAUDE_MODEL})")
+        except Exception as e:
+            print(f"⚠️  WARNING: Failed to initialize Claude API: {e}")
+            print("⚠️  Falling back to Ollama provider")
+            AI_PROVIDER = 'ollama'
 
 # Cost tracking disabled for local LLM (free to use)
 
@@ -191,6 +229,98 @@ def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None, t
             return ""
 
     return ""
+
+
+def call_claude(prompt: str, system_prompt: str = "", max_retries: int = 3, track_metrics: bool = True) -> str:
+    """
+    Call Claude API with the given prompt and retry logic
+
+    Args:
+        prompt: The user prompt to send
+        system_prompt: System instructions for Claude
+        max_retries: Maximum number of retry attempts
+        track_metrics: Whether to track metrics in dashboard
+
+    Returns:
+        Claude's response text, or empty string on failure
+    """
+    if not claude_client:
+        logger.error("❌ Claude client not initialized")
+        return ""
+
+    for attempt in range(max_retries):
+        start_time = time.time()
+        try:
+            # Call Claude API
+            message = claude_client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=CLAUDE_MAX_TOKENS,
+                temperature=CLAUDE_TEMPERATURE,
+                system=system_prompt if system_prompt else "You are a helpful assistant.",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                timeout=CLAUDE_TIMEOUT
+            )
+
+            # Extract response text
+            response_text = message.content[0].text.strip() if message.content else ""
+
+            # Track metrics
+            if track_metrics and dashboard:
+                response_time = time.time() - start_time
+                tokens = message.usage.output_tokens if hasattr(message, 'usage') else len(response_text) // 4
+                dashboard.add_ai_request(response_time, True, tokens, False)
+
+            return response_text
+
+        except Exception as e:
+            # Track failure
+            if track_metrics and dashboard:
+                response_time = time.time() - start_time
+                is_timeout = 'timeout' in str(e).lower() or 'timed out' in str(e).lower()
+                dashboard.add_ai_request(response_time, False, 0, is_timeout)
+
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                logger.warning(f"⚠️  Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                continue
+            else:
+                logger.error(f"❌ All {max_retries} attempts failed: {e}")
+                if dashboard:
+                    dashboard.add_error("claude_api_error", str(e))
+                return ""
+
+    return ""
+
+
+def call_ai_provider(prompt: str, system_prompt: str = "", max_retries: int = None, track_metrics: bool = True) -> str:
+    """
+    Call the configured AI provider (Ollama or Claude)
+
+    This is an abstraction layer that routes to the appropriate AI backend
+    based on the ai_provider configuration setting.
+
+    Args:
+        prompt: The user prompt to send
+        system_prompt: System instructions for the AI
+        max_retries: Maximum number of retry attempts (uses provider default if None)
+        track_metrics: Whether to track metrics in dashboard
+
+    Returns:
+        AI response text, or empty string on failure
+    """
+    if AI_PROVIDER == 'claude':
+        if max_retries is None:
+            max_retries = 3  # Claude is fast, fewer retries needed
+        return call_claude(prompt, system_prompt, max_retries, track_metrics)
+    else:
+        # Default to Ollama
+        if max_retries is None:
+            max_retries = OLLAMA_MAX_RETRIES
+        return call_ollama(prompt, system_prompt, max_retries, track_metrics)
+
 
 # Analytics tracking
 analytics = {
@@ -642,12 +772,12 @@ Categories: Client Acquisition, Service Delivery, Revenue & Pricing, Marketing &
 Return ONLY the JSON object, no explanations or other text."""
 
     try:
-        # Call Ollama instead of OpenAI
+        # Call configured AI provider (Ollama or Claude)
         system_prompt = "You analyze conversations and create knowledge connections. Return valid JSON only."
-        result_text = call_ollama(prompt, system_prompt)
+        result_text = call_ai_provider(prompt, system_prompt)
 
         if not result_text:
-            logger.error("❌ Empty response from Ollama")
+            logger.error(f"❌ Empty response from {AI_PROVIDER.upper()}")
             return None
         
         # Clean up potential markdown formatting
@@ -1238,26 +1368,41 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     start_time = datetime.now()
     processed_count = 0
     
-    # Test Ollama connection first
-    logger.info("🔍 Testing Ollama connection...")
-    logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
-    test_response = call_ollama("Hello", "You are a helpful assistant.")
+    # Test AI provider connection first
+    logger.info(f"🔍 Testing {AI_PROVIDER.upper()} connection...")
+    if AI_PROVIDER == 'ollama':
+        logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
+    test_response = call_ai_provider("Hello", "You are a helpful assistant.")
     if not test_response:
-        logger.error("❌ Ollama connection failed. Please check if Ollama is running and the model is loaded.")
-        logger.info("   Try: ollama serve")
-        logger.info("   Then: ollama pull qwen3:8b")
+        if AI_PROVIDER == 'claude':
+            logger.error("❌ Claude API connection failed. Please check your API key and internet connection.")
+            logger.info("   Set claude_api_key in config.yaml or ANTHROPIC_API_KEY env var")
+        else:
+            logger.error("❌ Ollama connection failed. Please check if Ollama is running and the model is loaded.")
+            logger.info("   Try: ollama serve")
+            logger.info(f"   Then: ollama pull {OLLAMA_MODEL}")
         return
     else:
-        logger.info("✅ Ollama connection successful")
-        logger.info("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
-        logger.info(f"   🤖 Using model: {OLLAMA_MODEL}")
-        print("✅ Ollama connection successful")
-        print("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
-        print(f"   🤖 Using model: {OLLAMA_MODEL}")
-        print(f"   ⏱️  Base timeout: {OLLAMA_TIMEOUT}s (extended for complex reasoning)")
-        print(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
-        print(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
-        print(f"   🧠 Extended timeouts prevent reasoning interruptions")
+        if AI_PROVIDER == 'claude':
+            logger.info(f"✅ Claude API connection successful")
+            logger.info(f"   🤖 Using model: {CLAUDE_MODEL}")
+            logger.info(f"   ⚡ Claude is fast (5-10 seconds per file)")
+            print(f"✅ Claude API connection successful")
+            print(f"   🤖 Using model: {CLAUDE_MODEL}")
+            print(f"   ⚡ Claude is fast (5-10 seconds per file)")
+            print(f"   ⏱️  Timeout: {CLAUDE_TIMEOUT}s")
+            print(f"   📝 Max tokens: {CLAUDE_MAX_TOKENS}")
+        else:
+            logger.info("✅ Ollama connection successful")
+            logger.info("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
+            logger.info(f"   🤖 Using model: {OLLAMA_MODEL}")
+            print("✅ Ollama connection successful")
+            print("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
+            print(f"   🤖 Using model: {OLLAMA_MODEL}")
+            print(f"   ⏱️  Base timeout: {OLLAMA_TIMEOUT}s (extended for complex reasoning)")
+            print(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
+            print(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
+            print(f"   🧠 Extended timeouts prevent reasoning interruptions")
     
     # Scan vault
     logger.info("🔍 Scanning vault...")
