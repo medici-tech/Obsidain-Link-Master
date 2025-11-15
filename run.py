@@ -20,6 +20,7 @@ class ObsidianAutoLinker:
         self.process = None
         self.running = False
         self.monitoring = False
+        self.enable_dashboard = False
         self.resource_stats = {
             'start_time': None,
             'peak_cpu': 0,
@@ -29,7 +30,9 @@ class ObsidianAutoLinker:
             'cpu_samples': [],
             'memory_samples': [],
             'last_activity': None,
-            'current_stage': 'Initializing'
+            'current_stage': 'Initializing',
+            'files_processed': 0,
+            'files_scanned': 0
         }
         self.monitor_thread = None
         
@@ -137,20 +140,22 @@ class ObsidianAutoLinker:
         print("📊 RESOURCE USAGE SUMMARY")
         print("="*60)
         print(f"⏱️  Total Runtime: {duration}")
+        print(f"📁 Files Scanned: {self.resource_stats['files_scanned']}")
+        print(f"✅ Files Processed: {self.resource_stats['files_processed']}")
         print(f"🖥️  Peak CPU Usage: {self.resource_stats['peak_cpu']:.1f}%")
         print(f"🧠 Peak Memory Usage: {self.resource_stats['peak_memory']:.1f}%")
         print(f"📈 Average CPU Usage: {self.resource_stats['avg_cpu']:.1f}%")
         print(f"📈 Average Memory Usage: {self.resource_stats['avg_memory']:.1f}%")
         print(f"🔄 Last Activity: {self.resource_stats['last_activity']}")
         print(f"⏰ Last Activity Time: {self.resource_stats.get('last_activity_time', 'Unknown')}")
-        
+
         # Show recent CPU/Memory trend
         if len(self.resource_stats['cpu_samples']) >= 10:
             recent_cpu = self.resource_stats['cpu_samples'][-10:]
             recent_memory = self.resource_stats['memory_samples'][-10:]
             print(f"📊 Recent CPU Trend: {recent_cpu[-1]:.1f}% (last 10s avg: {sum(recent_cpu)/len(recent_cpu):.1f}%)")
             print(f"📊 Recent Memory Trend: {recent_memory[-1]:.1f}% (last 10s avg: {sum(recent_memory)/len(recent_memory):.1f}%)")
-        
+
         print("="*60)
     
     def get_file_ordering(self):
@@ -233,7 +238,30 @@ class ObsidianAutoLinker:
                 return 10
             else:
                 print("   ❌ Invalid choice. Please enter 1-3")
-    
+
+    def get_dashboard_preference(self):
+        """Ask if user wants to enable the live dashboard"""
+        print("\n📊 Live Dashboard:")
+        print("   1. Enable dashboard (real-time metrics and monitoring)")
+        print("   2. Disable dashboard (simple text output)")
+
+        while True:
+            try:
+                choice = input("   Choose (1-2, default=1): ").strip()
+            except EOFError:
+                # Non-interactive mode, use default
+                choice = "1"
+                print("   Using default: 1")
+
+            if not choice:
+                return True
+            elif choice == "1":
+                return True
+            elif choice == "2":
+                return False
+            else:
+                print("   ❌ Invalid choice. Please enter 1-2")
+
     def update_config(self, vault_path, file_ordering, processing_mode, batch_size):
         """Update config.yaml with user choices"""
         # Convert processing mode to config values
@@ -278,8 +306,11 @@ vault_path: {vault_path}
             else:
                 print("❌ Ollama not responding")
                 return False
-        except:
-            print("❌ Ollama not running")
+        except (requests.exceptions.RequestException, ConnectionError) as e:
+            print(f"❌ Ollama not running: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Unexpected error checking Ollama: {e}")
             return False
     
     def run_processing(self):
@@ -287,31 +318,56 @@ vault_path: {vault_path}
         print("\n🚀 Starting Obsidian Auto-Linker...")
         print("   Press Ctrl+C to stop at any time")
         print("   " + "="*50)
-        
+
         # Set up signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
-        
-        # Start resource monitoring
+
+        # If dashboard is enabled, run in-process
+        if self.enable_dashboard:
+            try:
+                import obsidian_auto_linker_enhanced as processor
+                self.running = True
+                self.update_activity("Starting", "Launching with dashboard")
+
+                print("\n✅ Starting processing with live dashboard...\n")
+                processor.main(enable_dashboard=True, dashboard_update_interval=15)
+
+                self.update_activity("Completed", "Processing finished")
+
+            except KeyboardInterrupt:
+                print("\n🛑 Interrupted by user")
+            except Exception as e:
+                print(f"❌ Error: {e}")
+                import traceback
+                traceback.print_exc()
+                self.update_activity("Error", f"Exception: {str(e)}")
+            finally:
+                self.running = False
+                self.monitoring = False
+            return
+
+        # Otherwise, use subprocess mode (no dashboard)
         self.start_resource_monitoring()
-        
+
         try:
             self.running = True
             self.update_activity("Starting", "Launching processing script")
-            
+
             self.process = subprocess.Popen([
                 sys.executable, 'obsidian_auto_linker_enhanced.py'
-            ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+            ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             universal_newlines=True, bufsize=1)
-            
+
             # Stream output in real-time and track activity
             for line in iter(self.process.stdout.readline, ''):
                 if line:
                     line_clean = line.rstrip()
                     print(line_clean)
-                    
+
                     # Update activity based on output patterns
                     if "Processing file" in line_clean:
                         self.update_activity("Processing", "Analyzing file content")
+                        self.resource_stats['files_processed'] += 1
                     elif "AI Analysis" in line_clean:
                         self.update_activity("AI Analysis", "Local LLM processing")
                     elif "Creating links" in line_clean:
@@ -322,12 +378,17 @@ vault_path: {vault_path}
                         self.update_activity("Progress", "Updating progress")
                     elif "Testing Ollama" in line_clean:
                         self.update_activity("Testing", "Connecting to Ollama")
-                    elif "Found" in line_clean and "files" in line_clean:
+                    elif "Found" in line_clean and "markdown files to process" in line_clean:
                         self.update_activity("Scanning", "Discovering files")
-                    
+                        # Extract file count from line like "Found 25 markdown files to process"
+                        import re
+                        match = re.search(r'Found (\d+) markdown files', line_clean)
+                        if match:
+                            self.resource_stats['files_scanned'] = int(match.group(1))
+
             self.process.wait()
             self.update_activity("Completed", "Processing finished")
-            
+
         except KeyboardInterrupt:
             print("\n🛑 Interrupted by user")
             if self.process:
@@ -386,23 +447,28 @@ vault_path: {vault_path}
         vault_path = self.get_vault_path()
         if not vault_path:
             return
-            
+
         file_ordering = self.get_file_ordering()
         processing_mode = self.get_processing_mode()
         batch_size = self.get_batch_size()
-        
+        enable_dashboard = self.get_dashboard_preference()
+
+        # Store dashboard preference
+        self.enable_dashboard = enable_dashboard
+
         # Show summary
         mode_descriptions = {
             "fast_dry": "Fast Dry Run (quick test - no AI analysis)",
-            "dry": "Full Dry Run (complete test with AI analysis)", 
+            "dry": "Full Dry Run (complete test with AI analysis)",
             "live": "Live Run (will create new files)"
         }
-        
+
         print("\n📋 Configuration Summary:")
         print(f"   📁 Vault: {vault_path}")
         print(f"   📋 Order: {file_ordering}")
         print(f"   🔧 Mode: {mode_descriptions[processing_mode]}")
         print(f"   📦 Batch: {batch_size} file(s) at a time")
+        print(f"   📊 Dashboard: {'Enabled' if enable_dashboard else 'Disabled'}")
         
         # Confirm before running
         print("\n⚠️  Ready to start processing")

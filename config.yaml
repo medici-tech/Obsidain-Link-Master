@@ -1,3 +1,11 @@
+batch_size: 1
+custom_model_name: ''
+dry_run: True
+fast_dry_run: True
+file_ordering: 'recent'
+ollama_base_url: http://localhost:11434
+ollama_model: goekdenizguelmez/JOSIEFIED-Qwen3:latest
+vault_path: /Users/medici/Documents/MediciVault
 # Extended Timeout Configuration for Qwen3:8b
 # Prevents timeouts during active reasoning
 

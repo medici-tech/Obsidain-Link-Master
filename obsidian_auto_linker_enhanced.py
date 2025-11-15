@@ -20,15 +20,24 @@ import requests
 from tqdm import tqdm
 import fnmatch
 
-# Load config
-try:
-    with open('config.yaml', 'r') as f:
-        config = yaml.safe_load(f)
-    if config is None:
-        config = {}
-except Exception as e:
-    print(f"Error loading config: {e}")
-    config = {}
+# Import logging and dashboard
+from logger_config import get_logger, setup_logging
+from live_dashboard import LiveDashboard
+from config_utils import (
+    load_yaml_config,
+    check_ollama_connection,
+    load_json_file,
+    save_json_file,
+    validate_vault_path,
+    get_file_size_kb,
+    get_file_size_category
+)
+
+# Initialize logger
+logger = get_logger(__name__)
+
+# Load config using utility function
+config = load_yaml_config('config.yaml')
 
 VAULT_PATH = config.get('vault_path', '')
 BACKUP_FOLDER = os.path.join(VAULT_PATH, config.get('backup_folder', '_backups'))
@@ -66,18 +75,22 @@ OLLAMA_MAX_TOKENS = config.get('ollama_max_tokens', 1024)  # More tokens for det
 
 # Cost tracking disabled for local LLM (free to use)
 
-def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None) -> str:
+# Global dashboard reference (optional)
+dashboard = None
+
+def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None, track_metrics: bool = True) -> str:
     """Call Ollama API with the given prompt and retry logic"""
     if max_retries is None:
         max_retries = OLLAMA_MAX_RETRIES
-    
+
     for attempt in range(max_retries):
+        start_time = time.time()
         try:
             url = f"{OLLAMA_BASE_URL}/api/generate"
-            
+
             # Prepare the full prompt
             full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-            
+
             payload = {
                 "model": OLLAMA_MODEL,
                 "prompt": full_prompt,
@@ -92,37 +105,66 @@ def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None) -
                     "stop": ["```", "\n\n\n"]  # Stop tokens
                 }
             }
+
+            # Increase timeout with each retry (for slow local models)
+            timeout = OLLAMA_TIMEOUT + (attempt * 60)  # Base + 1min per retry
             
             # Increase timeout with each retry (for complex reasoning)
             timeout = OLLAMA_TIMEOUT + (attempt * 180)  # Base + 3min per retry for Qwen3:8b reasoning
             response = requests.post(url, json=payload, timeout=timeout)
             response.raise_for_status()
-            
+
             result = response.json()
-            return result.get('response', '').strip()
+            response_text = result.get('response', '').strip()
+
+            # Track metrics
+            if track_metrics and dashboard:
+                response_time = time.time() - start_time
+                # Estimate tokens (rough approximation: 4 chars per token)
+                tokens = len(response_text) // 4
+                dashboard.add_ai_request(response_time, True, tokens, False)
+
+            return response_text
             
         except requests.exceptions.Timeout:
+            # Track timeout
+            if track_metrics and dashboard:
+                response_time = time.time() - start_time
+                dashboard.add_ai_request(response_time, False, 0, True)
+
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                logger.warning(f"⏰ Attempt {attempt + 1} timed out ({timeout}s). Local models are slow - retrying in {wait_time}s...")
                 print(f"⏰ Attempt {attempt + 1} timed out ({timeout}s). Qwen3:8b needs time for complex reasoning - retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 continue
             else:
-                print(f"⏰ All {max_retries} attempts timed out. Local model is very slow (this is normal).")
+                logger.error(f"⏰ All {max_retries} attempts timed out. Local model is very slow (this is normal).")
+                if dashboard:
+                    dashboard.add_error("timeout", "AI request timed out after all retries")
                 return ""
         except requests.exceptions.RequestException as e:
+            # Track failure
+            if track_metrics and dashboard:
+                response_time = time.time() - start_time
+                dashboard.add_ai_request(response_time, False, 0, False)
+
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt
-                print(f"❌ Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                logger.warning(f"❌ Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 continue
             else:
-                print(f"❌ All {max_retries} attempts failed: {e}")
+                logger.error(f"❌ All {max_retries} attempts failed: {e}")
+                if dashboard:
+                    dashboard.add_error("api_error", str(e))
                 return ""
         except Exception as e:
-            print(f"❌ Unexpected error calling Ollama: {e}")
+            logger.error(f"❌ Unexpected error calling Ollama: {e}")
+            if dashboard:
+                dashboard.add_error("unexpected_error", str(e))
             return ""
-    
+
     return ""
 
 # Analytics tracking
@@ -188,83 +230,63 @@ MOC_DESCRIPTIONS = {
     "Life & Misc": "Everything else that doesn't fit other categories"
 }
 
-def load_progress():
-    """Load progress from file"""
+def load_progress() -> None:
+    """Load progress from file using config_utils"""
     if not RESUME_ENABLED:
         return
-    
-    progress_file = config.get('progress_file', '.processing_progress.json')
-    if os.path.exists(progress_file):
-        try:
-            with open(progress_file, 'r') as f:
-                data = json.load(f)
-                if data and isinstance(data, dict):
-                    progress_data['processed_files'] = set(data.get('processed_files', []))
-                    progress_data['failed_files'] = set(data.get('failed_files', []))
-                    progress_data['current_batch'] = data.get('current_batch', 0)
-                    print(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
-                else:
-                    progress_data['processed_files'] = set()
-                    progress_data['failed_files'] = set()
-                    progress_data['current_batch'] = 0
-        except (json.JSONDecodeError, ValueError):
-            progress_data['processed_files'] = set()
-            progress_data['failed_files'] = set()
-            progress_data['current_batch'] = 0
-        except Exception as e:
-            print(f"⚠️  Could not load progress file: {e}")
 
-def save_progress():
-    """Save progress to file"""
+    progress_file = config.get('progress_file', '.processing_progress.json')
+    data = load_json_file(progress_file, default={})
+
+    if data and isinstance(data, dict):
+        progress_data['processed_files'] = set(data.get('processed_files', []))
+        progress_data['failed_files'] = set(data.get('failed_files', []))
+        progress_data['current_batch'] = data.get('current_batch', 0)
+        if progress_data['processed_files']:
+            logger.info(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
+    else:
+        progress_data['processed_files'] = set()
+        progress_data['failed_files'] = set()
+        progress_data['current_batch'] = 0
+
+def save_progress() -> None:
+    """Save progress to file using config_utils"""
     if not RESUME_ENABLED:
         return
-    
+
     progress_file = config.get('progress_file', '.processing_progress.json')
-    try:
-        with open(progress_file, 'w') as f:
-            json.dump({
-                'processed_files': list(progress_data['processed_files']),
-                'failed_files': list(progress_data['failed_files']),
-                'current_batch': progress_data['current_batch'],
-                'last_update': datetime.now().isoformat()
-            }, f, indent=2)
-    except Exception as e:
-        print(f"⚠️  Could not save progress: {e}")
+    data = {
+        'processed_files': list(progress_data['processed_files']),
+        'failed_files': list(progress_data['failed_files']),
+        'current_batch': progress_data['current_batch'],
+        'last_update': datetime.now().isoformat()
+    }
+    save_json_file(progress_file, data)
 
-def load_cache():
-    """Load AI cache from file"""
+def load_cache() -> None:
+    """Load AI cache from file using config_utils"""
     if not CACHE_ENABLED:
         return
-    
-    cache_file = config.get('cache_file', '.ai_cache.json')
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, 'r') as f:
-                global ai_cache
-                data = json.load(f)
-                if data and isinstance(data, dict):
-                    ai_cache = data
-                else:
-                    ai_cache = {}
-        except (json.JSONDecodeError, ValueError):
-            ai_cache = {}
-        except Exception as e:
-            print(f"⚠️  Could not load cache: {e}")
-        
-        if ai_cache:
-            print(f"💾 Loaded cache: {len(ai_cache)} cached responses")
 
-def save_cache():
-    """Save AI cache to file"""
+    global ai_cache
+    cache_file = config.get('cache_file', '.ai_cache.json')
+    ai_cache = load_json_file(cache_file, default={})
+
+    if ai_cache:
+        logger.info(f"💾 Loaded cache: {len(ai_cache)} cached responses")
+
+        # Update dashboard with cache stats
+        if dashboard and os.path.exists(cache_file):
+            cache_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
+            dashboard.update_cache_stats(cache_size_mb, len(ai_cache))
+
+def save_cache() -> None:
+    """Save AI cache to file using config_utils"""
     if not CACHE_ENABLED:
         return
-    
+
     cache_file = config.get('cache_file', '.ai_cache.json')
-    try:
-        with open(cache_file, 'w') as f:
-            json.dump(ai_cache, f, indent=2)
-    except Exception as e:
-        print(f"⚠️  Could not save cache: {e}")
+    save_json_file(cache_file, ai_cache)
 
 def get_content_hash(content: str) -> str:
     """Generate hash for content caching"""
@@ -317,11 +339,12 @@ def get_all_notes(vault_path: str) -> Dict[str, str]:
                         content = f.read()
                         note_title = file[:-3]
                         notes[note_title] = content[:800]
-                except:
+                except (UnicodeDecodeError, IOError, OSError) as e:
+                    logger.debug(f"Could not read {file}: {e}")
                     continue
     return notes
 
-def create_moc_note(moc_name: str, vault_path: str):
+def create_moc_note(moc_name: str, vault_path: str) -> None:
     """Create MOC note if it doesn't exist"""
     moc_filename = MOCS[moc_name].replace('📍 ', '') + '.md'
     moc_path = os.path.join(vault_path, moc_filename)
@@ -359,7 +382,7 @@ This is a Map of Content (MOC) that organizes all notes related to {moc_name.low
     if not DRY_RUN:
         with open(moc_path, 'w', encoding='utf-8') as f:
             f.write(content)
-        print(f"  ✅ Created MOC: {moc_filename}")
+        logger.info(f"  ✅ Created MOC: {moc_filename}")
 
 def fast_dry_run_analysis(content: str, file_path: str) -> Dict[str, Any]:
     """Fast dry run analysis without AI - just basic structure analysis"""
@@ -408,14 +431,21 @@ def fast_dry_run_analysis(content: str, file_path: str) -> Dict[str, Any]:
 
 def analyze_with_balanced_ai(content: str, existing_notes: Dict[str, str]) -> Optional[Dict]:
     """Balanced AI analysis with caching"""
-    
+
     # Check cache first
+    cache_start = time.time()
     content_hash = get_content_hash(content)
     if content_hash in ai_cache:
         analytics['cache_hits'] += 1
+        if dashboard:
+            lookup_time = time.time() - cache_start
+            dashboard.add_cache_hit(lookup_time)
         return ai_cache[content_hash]
-    
+
     analytics['cache_misses'] += 1
+    if dashboard:
+        lookup_time = time.time() - cache_start
+        dashboard.add_cache_miss(lookup_time)
     
     # Sample of existing notes for context (reduced for efficiency)
     note_list = "\n".join([f"- {title}" for title in list(existing_notes.keys())[:50]])
@@ -453,9 +483,9 @@ Return ONLY the JSON object, no explanations or other text."""
         # Call Ollama instead of OpenAI
         system_prompt = "You analyze conversations and create knowledge connections. Return valid JSON only."
         result_text = call_ollama(prompt, system_prompt)
-        
+
         if not result_text:
-            print("❌ Empty response from Ollama")
+            logger.error("❌ Empty response from Ollama")
             return None
         
         # Clean up potential markdown formatting
@@ -472,31 +502,31 @@ Return ONLY the JSON object, no explanations or other text."""
         try:
             result = json.loads(result_text)
         except json.JSONDecodeError as e:
-            print(f"  ⚠️  JSON parse error: {e}")
-            print(f"  Response was: {result_text[:200]}")
-            
+            logger.warning(f"  ⚠️  JSON parse error: {e}")
+            logger.debug(f"  Response was: {result_text[:200]}")
+
             # Try to extract JSON from the response if it's wrapped in text
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
             if json_match:
                 try:
                     result = json.loads(json_match.group())
-                    print(f"  ✅ Extracted JSON from response")
+                    logger.info(f"  ✅ Extracted JSON from response")
                 except json.JSONDecodeError:
-                    print(f"  ❌ Could not extract valid JSON")
+                    logger.error(f"  ❌ Could not extract valid JSON")
                     return None
             else:
-                print(f"  ❌ No JSON found in response")
+                logger.error(f"  ❌ No JSON found in response")
                 return None
         
         # Cache the result
         ai_cache[content_hash] = result
-        
+
         return result
     except Exception as e:
-        print(f"  ⚠️  AI analysis failed: {e}")
+        logger.warning(f"  ⚠️  AI analysis failed: {e}")
         return None
 
-def backup_file(file_path: str):
+def backup_file(file_path: str) -> None:
     """Create timestamped backup with verification"""
     os.makedirs(BACKUP_FOLDER, exist_ok=True)
     
@@ -520,9 +550,9 @@ def backup_file(file_path: str):
         if len(backups) > MAX_BACKUPS:
             for old_backup in backups[:-MAX_BACKUPS]:
                 os.remove(os.path.join(BACKUP_FOLDER, old_backup))
-                
+
     except Exception as e:
-        print(f"  ❌ Backup failed: {e}")
+        logger.error(f"  ❌ Backup failed: {e}")
         raise
 
 def add_to_review_queue(file_path: str, ai_result: Dict[str, Any], confidence: float):
@@ -585,39 +615,42 @@ Once you've reviewed and corrected the analysis, you can:
 
 def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: Dict) -> bool:
     """Process single conversation file with enhanced error handling"""
-    
+
+    file_start_time = time.time()
     filename = os.path.basename(file_path)
-    
+
     # Check if already processed
     if file_path in progress_data['processed_files']:
         stats['already_processed'] += 1
         return False
-    
+
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
-        print(f"  ❌ Could not read {filename}: {e}")
+        logger.error(f"  ❌ Could not read {filename}: {e}")
         analytics['error_types']['file_read_error'] = analytics['error_types'].get('file_read_error', 0) + 1
+        if dashboard:
+            dashboard.add_error("file_read_error", f"Could not read {filename}")
         return False
     
     # Check if already processed (has proper structure)
     if '## 📊 METADATA' in content and '## 🔗 WIKI STRUCTURE' in content:
         has_parent = re.search(r'Parent: \[\[📍.*MOC\]\]', content)
         if has_parent:
-            print(f"  ⏭️  Already processed - skipping")
+            logger.info(f"  ⏭️  Already processed - skipping")
             stats['already_processed'] += 1
             progress_data['processed_files'].add(file_path)
             return False
-    
+
     # Analyze with AI or Fast Dry Run
-    print(f"\n📄 {filename}")
-    
+    logger.info(f"\n📄 {filename}")
+
     if FAST_DRY_RUN:
-        print("  ⚡ Fast analysis (no AI)...")
+        logger.info("  ⚡ Fast analysis (no AI)...")
         ai_result = fast_dry_run_analysis(content, file_path)
     else:
-        print("  🤖 Analyzing with balanced AI...")
+        logger.info("  🤖 Analyzing with balanced AI...")
         ai_result = None
         for attempt in range(MAX_RETRIES):
             try:
@@ -625,7 +658,7 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
                 if ai_result:
                     break
             except Exception as e:
-                print(f"  ⚠️  Attempt {attempt + 1} failed: {e}")
+                logger.warning(f"  ⚠️  Attempt {attempt + 1} failed: {e}")
                 analytics['retry_attempts'] += 1
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(2 ** attempt)  # Exponential backoff
@@ -634,9 +667,16 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
         stats['failed'] += 1
         analytics['error_types']['ai_analysis_failed'] = analytics['error_types'].get('ai_analysis_failed', 0) + 1
         progress_data['failed_files'].add(file_path)
+        if dashboard:
+            dashboard.add_error("ai_analysis_failed", f"Failed to analyze {filename}")
+            dashboard.add_activity(f"Failed: {filename}", success=False)
         return False
-    
+
     confidence = ai_result.get('confidence_score', 0)
+    logger.info(f"  ✓ Confidence: {confidence:.0%}")
+    logger.info(f"  ✓ MOC: {ai_result.get('moc_category')}")
+    logger.info(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
+
     print(f"  ✓ Confidence: {confidence:.0%}")
     print(f"  ✓ MOC: {ai_result.get('moc_category')}")
     print(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
@@ -658,6 +698,8 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     # Track MOC distribution
     moc_category = ai_result.get('moc_category', 'Life & Misc')
     analytics['moc_distribution'][moc_category] = analytics['moc_distribution'].get(moc_category, 0) + 1
+    if dashboard:
+        dashboard.add_moc_category(moc_category)
     
     # Extract components
     primary_topic = ai_result.get('primary_topic', 'Unknown')
@@ -712,11 +754,11 @@ Children: None yet"""
 ---
 {tags_section}
 """
-    
+
     # Show results
-    print(f"  🏷️  Tags: {len(hierarchical_tags)}")
-    print(f"  🔗 Siblings: {len(verified_siblings)}")
-    
+    logger.info(f"  🏷️  Tags: {len(hierarchical_tags)}")
+    logger.info(f"  🔗 Siblings: {len(verified_siblings)}")
+
     # Backup and write
     if not DRY_RUN:
         try:
@@ -735,17 +777,30 @@ Children: None yet"""
             stats['links_added'] += len(verified_siblings)
             stats['tags_added'] += len(hierarchical_tags)
             progress_data['processed_files'].add(file_path)
-            
-            print(f"  📄 Created new file: {os.path.basename(new_file_path)}")
-            print("  ✅ File updated")
+
+            logger.info(f"  📄 Created new file: {os.path.basename(new_file_path)}")
+            logger.info("  ✅ File updated")
+
+            # Track success
+            if dashboard:
+                dashboard.add_activity(f"Processed: {filename}", success=True)
         except Exception as e:
-            print(f"  ❌ Failed to update file: {e}")
+            logger.error(f"  ❌ Failed to update file: {e}")
             analytics['error_types']['file_write_error'] = analytics['error_types'].get('file_write_error', 0) + 1
+            if dashboard:
+                dashboard.add_error("file_write_error", f"Failed to write {filename}")
+                dashboard.add_activity(f"Write failed: {filename}", success=False)
             return False
     else:
         stats['would_process'] += 1
-        print("  🔥 DRY RUN - No changes made")
-    
+        logger.info("  🔥 DRY RUN - No changes made")
+
+    # Track file processing time
+    if dashboard:
+        processing_time = time.time() - file_start_time
+        file_size_kb = len(content) / 1024
+        dashboard.add_file_processing_time(file_size_kb, processing_time)
+
     return True
 
 def process_batch(files: List[str], existing_notes: Dict[str, str], stats: Dict) -> Dict:
@@ -765,7 +820,7 @@ def process_batch(files: List[str], existing_notes: Dict[str, str], stats: Dict)
     
     return batch_stats
 
-def order_files(files, ordering):
+def order_files(files: List[str], ordering: str) -> List[str]:
     """Order files based on the specified ordering method"""
     if ordering == 'recent':
         # Sort by modification time (newest first)
@@ -791,7 +846,7 @@ def order_files(files, ordering):
         # Default to original order
         return files
 
-def show_progress(current_file, stage, processed, total, start_time):
+def show_progress(current_file: str, stage: str, processed: int, total: int, start_time: datetime) -> None:
     """Show progress information"""
     elapsed = datetime.now() - start_time
     elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
@@ -814,7 +869,7 @@ def show_progress(current_file, stage, processed, total, start_time):
           f"⏱️ {elapsed_str} | 🏃 {speed:.1f}/min | ⏳ {eta_str} | "
           f"📁 {current_file[:30]}... | 🔄 {stage}", end="", flush=True)
 
-def generate_analytics_report():
+def generate_analytics_report() -> None:
     """Generate comprehensive analytics report"""
     if not ANALYTICS_ENABLED:
         return
@@ -881,31 +936,40 @@ def generate_analytics_report():
 </body>
 </html>
 """
-        
+
         with open('analytics_report.html', 'w') as f:
             f.write(html_report)
-        
-        print(f"📊 Analytics report saved to: analytics_report.html")
 
-def main():
+        logger.info(f"📊 Analytics report saved to: analytics_report.html")
+
+def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
     """Enhanced main processing function"""
+    global dashboard
+
+    # Initialize dashboard if requested
+    if enable_dashboard:
+        dashboard = LiveDashboard(update_interval=dashboard_update_interval)
+        dashboard.start()
+
+    logger.info("=" * 60)
+    logger.info("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
     # Declare global variables for interactive mode
     global DRY_RUN, BATCH_SIZE, OLLAMA_MODEL, FILE_ORDERING
     
     print("=" * 60)
     print("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
     if FAST_DRY_RUN:
-        print("   ⚡ FAST DRY RUN MODE - No AI Analysis")
+        logger.info("   ⚡ FAST DRY RUN MODE - No AI Analysis")
     elif DRY_RUN:
-        print("   🔍 DRY RUN MODE - Full AI Analysis")
+        logger.info("   🔍 DRY RUN MODE - Full AI Analysis")
     else:
-        print("   🚀 LIVE MODE - Processing Files")
-    print("=" * 60)
-    print()
-    
+        logger.info("   🚀 LIVE MODE - Processing Files")
+    logger.info("=" * 60)
+    logger.info("")
+
     # Initialize analytics
     analytics['start_time'] = datetime.now()
-    
+
     # Load progress and cache
     load_progress()
     load_cache()
@@ -925,15 +989,18 @@ def main():
     processed_count = 0
     
     # Test Ollama connection first
-    print("🔍 Testing Ollama connection...")
-    print("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
+    logger.info("🔍 Testing Ollama connection...")
+    logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
     test_response = call_ollama("Hello", "You are a helpful assistant.")
     if not test_response:
-        print("❌ Ollama connection failed. Please check if Ollama is running and the model is loaded.")
-        print("   Try: ollama serve")
-        print("   Then: ollama pull qwen3:8b")
+        logger.error("❌ Ollama connection failed. Please check if Ollama is running and the model is loaded.")
+        logger.info("   Try: ollama serve")
+        logger.info("   Then: ollama pull qwen3:8b")
         return
     else:
+        logger.info("✅ Ollama connection successful")
+        logger.info("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
+        logger.info(f"   🤖 Using model: {OLLAMA_MODEL}")
         print("✅ Ollama connection successful")
         print("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
         print(f"   🤖 Using model: {OLLAMA_MODEL}")
@@ -943,18 +1010,18 @@ def main():
         print(f"   🧠 Extended timeouts prevent reasoning interruptions")
     
     # Scan vault
-    print("🔍 Scanning vault...")
-    print(f"   Vault path: {VAULT_PATH}")
+    logger.info("🔍 Scanning vault...")
+    logger.info(f"   Vault path: {VAULT_PATH}")
     existing_notes = get_all_notes(VAULT_PATH)
-    print(f"   Found {len(existing_notes)} existing notes")
-    
+    logger.info(f"   Found {len(existing_notes)} existing notes")
+
     # Create MOC notes if needed
-    print("\n📚 Checking MOC notes...")
+    logger.info("\n📚 Checking MOC notes...")
     for moc_name in MOCS.keys():
         create_moc_note(moc_name, VAULT_PATH)
-    
+
     # Find conversation files
-    print("\n🔎 Finding conversation files...")
+    logger.info("\n🔎 Finding conversation files...")
     all_files = []
     for root, dirs, files in os.walk(VAULT_PATH):
         if config.get('backup_folder', '_backups') in root:
@@ -970,27 +1037,39 @@ def main():
         all_files = [f for f in all_files if f not in progress_data['processed_files']]
     
     # Order files based on configuration
-    print(f"📋 Ordering files by: {FILE_ORDERING}")
+    logger.info(f"📋 Ordering files by: {FILE_ORDERING}")
     all_files = order_files(all_files, FILE_ORDERING)
-    
-    print(f"   Found {len(all_files)} markdown files to process")
-    
+
+    logger.info(f"   Found {len(all_files)} markdown files to process")
+
     # Set total files for progress tracking
     total_files = len(all_files)
-    
+
     # Estimate processing time for slow local models
     if len(all_files) > 0:
         estimated_time_per_file = 2.5  # minutes per file for local models
         total_estimated_minutes = len(all_files) * estimated_time_per_file
         total_estimated_hours = total_estimated_minutes / 60
-        
+
         if total_estimated_hours >= 1:
-            print(f"   ⏰ Estimated time: {total_estimated_hours:.1f} hours (local models are slow)")
+            logger.info(f"   ⏰ Estimated time: {total_estimated_hours:.1f} hours (local models are slow)")
         else:
-            print(f"   ⏰ Estimated time: {total_estimated_minutes:.0f} minutes (local models are slow)")
-        print("   💡 Tip: You can stop and resume processing anytime")
+            logger.info(f"   ⏰ Estimated time: {total_estimated_minutes:.0f} minutes (local models are slow)")
+        logger.info("   💡 Tip: You can stop and resume processing anytime")
     
     # Interactive mode checks
+    if INTERACTIVE_MODE and not DRY_RUN:
+        if len(all_files) > 100 and config.get('confirm_large_batches', True):
+            try:
+                response = input(f"\n⚠️  Found {len(all_files)} files to process. Continue? (y/N): ")
+                if response.lower() != 'y':
+                    logger.info("❌ Processing cancelled by user")
+                    return
+            except EOFError:
+                # Running in non-interactive mode (like from web GUI)
+                logger.warning(f"⚠️  Found {len(all_files)} files to process. Auto-continuing...")
+                pass
+
     if INTERACTIVE_MODE:
         try:
             print("\n" + "=" * 60)
@@ -1094,22 +1173,46 @@ def main():
             pass
         
         # Cost tracking removed for local LLM
-    
+
     if DRY_RUN:
+        logger.info("\n🔥 DRY RUN MODE - No files will be modified")
+        logger.info("   Set dry_run: false in config.yaml to process for real\n")
         print("\n🔥 DRY RUN MODE - No files will be modified")
         print(f"   📊 Limited to first {DRY_RUN_LIMIT} files for analysis")
         print("   Set dry_run: false in config.yaml to process for real\n")
     else:
-        print(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
-        print(f"   Backups stored in: {BACKUP_FOLDER}\n")
-    
+        logger.warning(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
+        logger.info(f"   Backups stored in: {BACKUP_FOLDER}\n")
+
     # Process files one at a time
-    print("📝 Processing files one at a time...\n")
-    
+    logger.info("📝 Processing files one at a time...\n")
+
     analytics['total_files'] = len(all_files)
-    
+
+    # Initialize dashboard with total files
+    if dashboard:
+        dashboard.update_processing(
+            total_files=len(all_files),
+            processed_files=0,
+            failed_files=0,
+            current_file="Starting...",
+            current_stage="Initializing"
+        )
+
     for i, file_path in enumerate(all_files, 1):
         current_file = os.path.basename(file_path)
+        logger.info(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
+
+        # Update dashboard
+        if dashboard:
+            dashboard.update_processing(
+                total_files=len(all_files),
+                processed_files=processed_count,
+                failed_files=stats['failed'],
+                current_file=current_file,
+                current_stage="Processing"
+            )
+
         print(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
         
         # Check dry run limit
@@ -1165,38 +1268,54 @@ def main():
         
         # Show progress
         show_progress(current_file, "Processing", processed_count, total_files, start_time)
-        
+
         # Process the file
         if process_conversation(file_path, existing_notes, stats):
             processed_count += 1
             show_progress(current_file, "Completed", processed_count, total_files, start_time)
         else:
             show_progress(current_file, "Skipped", processed_count, total_files, start_time)
-        
+
         # Save progress after each file
         save_progress()
         save_cache()
-        
+
+        # Update dashboard after processing
+        if dashboard:
+            dashboard.update_processing(
+                total_files=len(all_files),
+                processed_files=processed_count,
+                failed_files=stats['failed'],
+                current_file=current_file,
+                current_stage="Completed"
+            )
+
         # Show file summary
-        print(f"\n📊 File {i} complete:")
-        print(f"   ✅ Processed: {stats['processed']}")
-        print(f"   ⏭️  Skipped: {stats['already_processed']}")
-        print(f"   ❌ Failed: {stats['failed']}")
-        print(f"   🔗 Links added: {stats['links_added']}")
-        print(f"   🏷️  Tags added: {stats['tags_added']}")
+        logger.info(f"\n📊 File {i} complete:")
+        logger.info(f"   ✅ Processed: {stats['processed']}")
+        logger.info(f"   ⏭️  Skipped: {stats['already_processed']}")
+        logger.info(f"   ❌ Failed: {stats['failed']}")
+        logger.info(f"   🔗 Links added: {stats['links_added']}")
+        logger.info(f"   🏷️  Tags added: {stats['tags_added']}")
     
     # Update analytics
     analytics['processed_files'] = stats['processed']
     analytics['skipped_files'] = stats['already_processed']
     analytics['failed_files'] = stats['failed']
-    
+
     # Final report
-    print("\n" + "=" * 60)
-    print("✅ PROCESSING COMPLETE")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("✅ PROCESSING COMPLETE")
+    logger.info("=" * 60)
     if DRY_RUN:
-        print(f"📊 Would process: {stats['would_process']} files")
+        logger.info(f"📊 Would process: {stats['would_process']} files")
     else:
+        logger.info(f"📊 Processed: {stats['processed']} files")
+        logger.info(f"📄 New files created: {stats['processed']} (with '_linked' suffix)")
+        logger.info(f"🔗 Links added: {stats['links_added']}")
+        logger.info(f"🏷️  Tags added: {stats['tags_added']}")
+    logger.info(f"⏭️  Already processed: {stats['already_processed']}")
+    logger.info(f"❌ Failed: {stats['failed']}")
         print(f"📊 Processed: {stats['processed']} files")
         print(f"📄 New files created: {stats['processed']} (with '_linked' suffix)")
         print(f"🔗 Links added: {stats['links_added']}")
@@ -1206,10 +1325,11 @@ def main():
     print(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)} (below {CONFIDENCE_THRESHOLD:.0%} threshold)")
     print(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files flagged for manual review")
     # Cost tracking removed for local LLM
-    print()
-    
+    logger.info("")
+
     # Generate analytics report
     generate_analytics_report()
+
     
     # Generate ultra detailed analytics with before/after files and reasoning
     try:
@@ -1229,11 +1349,28 @@ def main():
         print("📊 Using standard analytics report")
     
     if DRY_RUN:
-        print("💡 Set dry_run: false in config.yaml to process for real")
+        logger.info("💡 Set dry_run: false in config.yaml to process for real")
     else:
-        print(f"💾 Backups saved to: {BACKUP_FOLDER}")
-    
-    print("=" * 60)
+        logger.info(f"💾 Backups saved to: {BACKUP_FOLDER}")
+
+    logger.info("=" * 60)
+
+    # Stop dashboard if running
+    if dashboard:
+        dashboard.update_processing(
+            total_files=len(all_files),
+            processed_files=processed_count,
+            failed_files=stats['failed'],
+            current_file="Complete",
+            current_stage="Finished"
+        )
+        logger.info("\n📊 Dashboard Summary:")
+        logger.info(f"   Total Files: {len(all_files)}")
+        logger.info(f"   Processed: {processed_count}")
+        logger.info(f"   Failed: {stats['failed']}")
+        logger.info(f"   Cache Hits: {analytics['cache_hits']}")
+        logger.info(f"   Cache Misses: {analytics['cache_misses']}")
+        dashboard.stop()
 
 if __name__ == "__main__":
     main()
