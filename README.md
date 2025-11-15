@@ -1,103 +1,349 @@
-# Obsidian Auto-Linker
+# 🚀 Enhanced Obsidian Auto-Linker
 
-An intelligent tool that automatically processes your Obsidian vault files and creates a Map of Content (MOC) structure with AI-powered linking.
+An intelligent AI-powered system for automatically categorizing and linking Obsidian vault files using local LLM models with advanced quality control features.
 
-## Features
+## ✨ Features
 
-- **Interactive Configuration**: Easy setup with guided prompts
-- **Safe Processing**: Creates new `_linked.md` files instead of overwriting originals
-- **Progress Tracking**: Real-time progress display with ETA
-- **Resource Monitoring**: Track CPU and memory usage in real-time
-- **Activity Tracking**: See exactly what the process is doing when you stop it
-- **Easy Stop**: Press Ctrl+C to stop processing at any time with resource summary
-- **Local AI**: Uses Ollama for privacy and cost-free processing
-- **Smart Caching**: Avoids re-processing already analyzed files
-- **Multiple Ordering**: Process files by recent, size, random, or alphabetical order
+### 🤖 AI-Powered Analysis
+- **Local LLM Integration**: Uses Ollama with Qwen3:8b for privacy and cost-effectiveness
+- **Smart Categorization**: Automatically categorizes files into 12 MOC (Map of Content) categories
+- **Intelligent Linking**: Creates sibling links and hierarchical tags
+- **Context-Aware**: Analyzes file content and existing vault structure
 
-## Quick Start
+### 🎯 Quality Control
+- **Confidence Threshold**: 80% confidence requirement for automatic processing
+- **Review Queue**: Low confidence files flagged for manual review
+- **Dry Run Limits**: Process only 10 files initially with interactive prompts
+- **Comprehensive Analytics**: Detailed reporting and performance metrics
 
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 🔧 Advanced Features
+- **Resume Processing**: Continue from where you left off
+- **Caching System**: Avoid re-processing analyzed files
+- **Multiple Configurations**: Pre-built configs for different use cases
+- **Backup System**: Automatic backups before modifications
+- **Progress Tracking**: Real-time progress monitoring
 
-2. **Start Ollama** (if not already running):
-   ```bash
-   ollama serve
-   ```
+## 📋 Prerequisites
 
-3. **Run the Interactive Tool**:
-   ```bash
-   python3 run.py
-   ```
+### System Requirements
+- **Python 3.9+**
+- **Ollama** (for local LLM processing)
+- **8GB+ RAM** (for Qwen3:8b model)
+- **macOS/Linux/Windows**
 
-4. **Follow the prompts**:
-   - Choose your Obsidian vault path
-   - Select file processing order
-   - Choose between Dry Run (safe) or Live Run
-   - Pick batch size
-   - Confirm and start processing
+### Required Models
+- **Qwen3:8b** (primary model for analysis)
+- **Qwen2.5:3b** (optional, for fast dry runs)
 
-## Usage
+## 🚀 Quick Start
 
-### Interactive Mode
+### 1. Clone the Repository
 ```bash
-python3 run.py
+git clone <repository-url>
+cd "Obsidain Link Master"
 ```
 
-The script will guide you through:
-- **Vault Path**: Location of your Obsidian vault
-- **File Order**: How to process files (recent, size, random, alphabetical)
-- **Processing Mode**: 
-  - Dry Run: Safe testing mode (no file changes)
-  - Live Run: Creates new `_linked.md` files
-- **Batch Size**: How many files to process at once
+### 2. Install Dependencies
+```bash
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-### Stopping the Process
-- Press **Ctrl+C** at any time to stop processing safely
-- The script will gracefully terminate and save progress
-- **Resource Summary**: When you stop, you'll see:
-  - Total runtime
-  - Peak CPU and memory usage
-  - Average resource usage
-  - What the process was doing when stopped
-  - Recent resource trends
+# Install requirements
+pip install -r requirements.txt
+```
 
-## Configuration
+### 3. Install and Setup Ollama
+```bash
+# Install Ollama (macOS)
+brew install ollama
 
-The tool automatically creates a `config.yaml` file with your preferences. You can also edit this file directly for advanced settings.
+# Or download from: https://ollama.ai/download
 
-## Output
+# Start Ollama service
+ollama serve
 
-- **Dry Run**: Shows what would be processed without making changes
-- **Live Run**: Creates new files with `_linked` suffix (e.g., `note.md` → `note_linked.md`)
+# Pull required models (in another terminal)
+ollama pull qwen3:8b
+ollama pull qwen2.5:3b
+```
 
-## Troubleshooting
+### 4. Configure Your Vault
+Edit `config.yaml`:
+```yaml
+# Update vault path
+vault_path: /path/to/your/obsidian/vault
 
-### Ollama Issues
-If you get connection errors:
-1. Make sure Ollama is running: `ollama serve`
-2. Check if your model is loaded: `ollama list`
-3. Pull the model if needed: `ollama pull qwen3:8b`
+# Adjust settings as needed
+confidence_threshold: 0.8  # 80% confidence required
+dry_run_limit: 10         # Process 10 files in dry run
+```
 
-### Slow Processing
-Local AI models can be slow (2-3 minutes per file). This is normal. The tool includes:
-- Progress tracking with ETA
-- Retry logic for timeouts
-- Caching to avoid re-processing
+### 5. Run the Application
+```bash
+# Activate virtual environment
+source venv/bin/activate
 
-## Files Created
+# Run the enhanced auto-linker
+python3 obsidian_auto_linker_enhanced.py
+```
 
-- `config.yaml`: Configuration settings
-- `.ai_cache.json`: AI response cache
-- `.processing_progress.json`: Processing progress
-- `*_linked.md`: New processed files (in Live mode)
+## ⚙️ Configuration
 
-## Safety Features
+### Core Settings
+```yaml
+# Vault and processing
+vault_path: "/path/to/your/vault"
+dry_run: true                    # Start in safe mode
+dry_run_limit: 10               # Files to process in dry run
+confidence_threshold: 0.8       # Quality control threshold
 
-- **Dry Run Mode**: Test without making changes
-- **Backup System**: Original files are never modified
-- **Progress Saving**: Can resume interrupted processing
-- **Error Handling**: Graceful failure recovery
-- **Resource Monitoring**: Track system impact in real-time
-- **Activity Tracking**: Know exactly what was happening when you stopped
+# AI Model settings
+ollama_model: "qwen3:8b"        # Primary model
+ollama_temperature: 0.1         # Low temperature for consistency
+ollama_timeout: 600             # 10 minutes per file
+```
+
+### Quality Control
+```yaml
+# Confidence and review settings
+confidence_threshold: 0.8       # Files below 80% flagged for review
+enable_review_queue: true       # Enable manual review
+review_queue_path: "reviews/"   # Where to store review files
+```
+
+### Performance
+```yaml
+# Processing settings
+batch_size: 1                   # Process one file at a time
+parallel_workers: 1             # Single-threaded for stability
+max_retries: 5                  # Retry failed analyses
+```
+
+## 📊 Usage Workflow
+
+### 1. Initial Dry Run
+```bash
+python3 obsidian_auto_linker_enhanced.py
+```
+- Processes first 10 files
+- Shows confidence scores and categorization
+- Displays interactive options
+
+### 2. Review Results
+- Check confidence scores (aim for 80%+)
+- Review any flagged files in `reviews/` directory
+- Examine analytics report
+
+### 3. Switch to Real Processing
+- Choose option 1 from interactive menu
+- Confirm with "YES"
+- Files will be modified with new structure
+
+### 4. Monitor Progress
+- Real-time progress updates
+- Automatic backups created
+- Resume capability if interrupted
+
+## 📁 File Structure
+
+```
+Obsidain Link Master/
+├── obsidian_auto_linker_enhanced.py    # Main application
+├── config.yaml                         # Configuration file
+├── requirements.txt                    # Python dependencies
+├── configs/                            # Alternative configurations
+│   ├── config_fast.yaml               # Fast processing
+│   ├── config_detailed_analytics.yaml  # Detailed reporting
+│   └── config_ultra_fast.yaml          # Ultra-fast mode
+├── scripts/                            # Utility scripts
+│   ├── intelligent_model_selector.py   # Model selection
+│   ├── optimize_performance.py        # Performance tuning
+│   └── verify_system.py              # System verification
+├── reports/                            # Analytics reports
+│   ├── comprehensive_analytics_report.html
+│   └── processing_analytics.json
+├── reviews/                            # Manual review files
+└── docs/                              # Documentation
+```
+
+## 🎛️ Advanced Configuration
+
+### Using Alternative Configs
+```bash
+# Copy a different config
+cp configs/config_fast.yaml config.yaml
+
+# Or use specific configs
+python3 run_fast.py                    # Fast processing
+python3 run_detailed_analytics.py      # Detailed analytics
+python3 run_ultra_detailed.py          # Ultra-detailed mode
+```
+
+### Model Selection
+```yaml
+# For faster processing (less accurate)
+ollama_model: "qwen2.5:3b"
+ollama_timeout: 120
+
+# For maximum accuracy (slower)
+ollama_model: "qwen3:8b"
+ollama_timeout: 600
+```
+
+### Performance Tuning
+```yaml
+# Memory optimization
+memory_optimization: true
+max_memory_usage: 12
+
+# Caching
+cache_enabled: true
+resume_enabled: true
+```
+
+## 📊 Analytics and Reporting
+
+### Generated Reports
+- **HTML Analytics Report**: Comprehensive processing statistics
+- **JSON Analytics**: Machine-readable processing data
+- **Review Files**: Detailed analysis for manual review
+- **Progress Tracking**: Resume capability with progress files
+
+### Key Metrics
+- **Processing Speed**: Files per minute
+- **Confidence Distribution**: AI confidence scores
+- **MOC Distribution**: Category breakdown
+- **Error Analysis**: Failed processing reasons
+- **Review Queue**: Files needing manual attention
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### Ollama Connection Failed
+```bash
+# Check if Ollama is running
+ollama serve
+
+# Verify model is installed
+ollama list
+
+# Pull missing models
+ollama pull qwen3:8b
+```
+
+#### Low Memory Issues
+```bash
+# Use smaller model
+ollama pull qwen2.5:3b
+
+# Update config
+ollama_model: "qwen2.5:3b"
+ollama_timeout: 120
+```
+
+#### Processing Too Slow
+```bash
+# Use fast configuration
+cp configs/config_fast.yaml config.yaml
+
+# Or adjust settings
+ollama_model: "qwen2.5:3b"
+ollama_timeout: 120
+```
+
+### System Verification
+```bash
+# Run system check
+python3 scripts/verify_system.py
+
+# Test model performance
+python3 scripts/model_performance_test.py
+```
+
+## 🚀 Deployment to New Computer
+
+### 1. System Setup
+```bash
+# Install Python 3.9+
+# Install Ollama
+# Clone repository
+git clone <repository-url>
+cd "Obsidain Link Master"
+```
+
+### 2. Environment Setup
+```bash
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 3. Ollama Setup
+```bash
+# Start Ollama
+ollama serve
+
+# Install models
+ollama pull qwen3:8b
+ollama pull qwen2.5:3b
+```
+
+### 4. Configuration
+```bash
+# Update vault path
+nano config.yaml
+
+# Test configuration
+python3 scripts/verify_system.py
+```
+
+### 5. First Run
+```bash
+# Run in dry run mode
+python3 obsidian_auto_linker_enhanced.py
+
+# Review results and switch to real processing
+```
+
+## 📚 Additional Resources
+
+### Documentation
+- `docs/README.md` - Detailed documentation
+- `USAGE.md` - Usage examples and tips
+- `docs/cleanup_plan.md` - Vault cleanup strategies
+
+### Scripts
+- `scripts/optimize_performance.py` - Performance optimization
+- `scripts/intelligent_model_selector.py` - Automatic model selection
+- `scripts/dry_run_analysis.py` - Dry run analysis tools
+
+### Reports
+- `reports/` - Generated analytics and reports
+- `reviews/` - Files flagged for manual review
+
+## 🤝 Support
+
+### Getting Help
+1. Check the troubleshooting section
+2. Review generated analytics reports
+3. Examine review queue files for issues
+4. Run system verification scripts
+
+### Performance Tips
+- Start with dry run to test configuration
+- Use appropriate model for your hardware
+- Monitor memory usage during processing
+- Review confidence scores before real processing
+
+## 📄 License
+
+This project is designed for personal use with Obsidian vaults. Please ensure you have appropriate backups before processing your vault.
+
+---
+
+**⚠️ Important**: Always backup your Obsidian vault before running real processing. The system creates backups automatically, but additional backups are recommended.

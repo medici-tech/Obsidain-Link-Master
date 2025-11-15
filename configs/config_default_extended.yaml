@@ -1,0 +1,24 @@
+# Default Configuration with Extended Timeouts
+# Qwen3:8b with extended timeouts built-in
+
+# Core settings
+vault_path: /Users/medici/Documents/MediciVault
+dry_run: false
+fast_dry_run: false
+
+# Analytics
+analytics_enabled: true
+generate_report: true
+auto_open_report: true
+
+# Processing
+batch_size: 1
+file_ordering: 'recent'
+
+# Qwen3:8b with Extended Timeouts (Built-in)
+ollama_base_url: http://localhost:11434
+ollama_model: qwen3:8b
+ollama_timeout: 300  # 5 minutes base timeout
+ollama_max_retries: 5  # More retries for complex reasoning
+ollama_max_tokens: 1024  # More tokens for detailed responses
+ollama_temperature: 0.1  # Consistent responses

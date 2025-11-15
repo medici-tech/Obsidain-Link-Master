@@ -233,37 +233,84 @@ def get_file_size_category(size_kb: float) -> str:
         return 'large'
 
 
-def validate_vault_path(vault_path: str, must_exist: bool = True) -> bool:
-    """Validate Obsidian vault path.
+def validate_vault_path(vault_path: str, must_exist: bool = True, allow_symlinks: bool = True) -> bool:
+    """Validate Obsidian vault path with security checks.
 
     Args:
         vault_path: Path to Obsidian vault
         must_exist: If True, path must exist
+        allow_symlinks: If True, allow symlinked directories
 
     Returns:
         True if path is valid, False otherwise
+
+    Security Checks:
+        - Path is not empty
+        - Not a system/sensitive directory
+        - No null bytes in path
+        - Resolves to absolute path
+        - Is a directory (if must_exist=True)
+        - Optionally validates symlinks
     """
     if not vault_path:
         logger.error("Vault path is empty")
         return False
 
-    # Check for path traversal attempts
+    # Security: Check for null bytes (can bypass some checks)
+    if '\x00' in vault_path:
+        logger.error("Vault path contains null bytes - potential security issue")
+        return False
+
+    # Expand user home directory
+    expanded_path = os.path.expanduser(vault_path)
+
+    # Resolve to absolute path
     try:
-        resolved = os.path.abspath(vault_path)
-        if '..' in os.path.relpath(resolved, os.getcwd()):
-            logger.warning(f"Suspicious path with traversal: {vault_path}")
-    except ValueError:
-        pass  # Different drives on Windows, ignore
+        resolved_path = os.path.abspath(expanded_path)
+    except (ValueError, OSError) as e:
+        logger.error(f"Could not resolve vault path: {e}")
+        return False
 
+    # Security: Block system/sensitive directories
+    sensitive_dirs = [
+        '/etc', '/sys', '/proc', '/dev', '/boot',
+        '/bin', '/sbin', '/usr/bin', '/usr/sbin',
+        'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)',
+        '/System', '/Library',  # macOS system directories
+    ]
+
+    for sensitive_dir in sensitive_dirs:
+        if resolved_path.lower().startswith(sensitive_dir.lower()):
+            logger.error(f"Vault path cannot be in system directory: {resolved_path}")
+            return False
+
+    # Security: Block root directory
+    if resolved_path in ['/', 'C:\\', 'C:/']:
+        logger.error("Vault path cannot be root directory")
+        return False
+
+    # Check if path exists (if required)
     if must_exist:
-        if not os.path.exists(vault_path):
-            logger.error(f"Vault path does not exist: {vault_path}")
-            return False
-        if not os.path.isdir(vault_path):
-            logger.error(f"Vault path is not a directory: {vault_path}")
+        if not os.path.exists(resolved_path):
+            logger.error(f"Vault path does not exist: {resolved_path}")
             return False
 
-    logger.debug(f"Vault path validated: {vault_path}")
+        # Verify it's a directory
+        if not os.path.isdir(resolved_path):
+            logger.error(f"Vault path is not a directory: {resolved_path}")
+            return False
+
+        # Security: Check for symlinks if not allowed
+        if not allow_symlinks and os.path.islink(expanded_path):
+            logger.error(f"Vault path is a symlink (not allowed): {expanded_path}")
+            return False
+
+        # Security: Verify we have read permissions
+        if not os.access(resolved_path, os.R_OK):
+            logger.error(f"Vault path is not readable: {resolved_path}")
+            return False
+
+    logger.debug(f"Vault path validated: {resolved_path}")
     return True
 
 
