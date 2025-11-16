@@ -1,16 +1,13 @@
-# -*- coding: utf-8 -*-
-"""Central pytest fixtures and helpers for the Obsidian Auto-Linker suite."""
+"""Pytest configuration and fixtures for Obsidian Auto-Linker tests."""
 
-from __future__ import annotations
+from pathlib import Path
+from typing import Any, Dict
+from unittest.mock import MagicMock, Mock, patch
 
-import hashlib
 import json
 import os
 import shutil
 import tempfile
-from pathlib import Path
-from typing import Any, Dict, Iterable
-from unittest.mock import Mock, patch
 
 import pytest
 import yaml
@@ -20,32 +17,56 @@ try:  # Optional dependency used by mock_datetime
 except ImportError:  # pragma: no cover - best effort fallback for environments without freezegun
     freeze_time = None
 
-
-# ---------------------------------------------------------------------------
-# Basic filesystem utilities
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
-def temp_dir() -> Iterable[str]:
-    """Yield a temporary directory and clean it up afterwards."""
+def temp_dir():
+    """Create a temporary directory for tests."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield tmpdir
 
 
 @pytest.fixture
-def temp_vault() -> Iterable[str]:
-    """Create a persistent temporary vault that can be mutated across a test."""
-    tmpdir = tempfile.mkdtemp()
-    try:
-        yield tmpdir
-    finally:
-        shutil.rmtree(tmpdir)
+def temp_vault():
+    """Create a temporary vault directory for testing."""
+    temp_dir = tempfile.mkdtemp()
+    yield temp_dir
+    shutil.rmtree(temp_dir)
 
 
 @pytest.fixture
-def mock_vault(temp_dir: str) -> str:
-    """Create a mock Obsidian vault with a few markdown notes."""
+def sample_config_yaml(temp_dir):
+    """Create a sample config.yaml file."""
+    config_path = os.path.join(temp_dir, "config.yaml")
+    config_data = {
+        "vault_path": "/path/to/vault",
+        "dry_run": True,
+        "fast_dry_run": False,
+        "batch_size": 5,
+        "file_ordering": "recent",
+        "ollama_base_url": "http://localhost:11434",
+        "ollama_model": "qwen2.5:3b",
+    }
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config_data, f)
+    return config_path
+
+
+@pytest.fixture
+def sample_json_file(temp_dir):
+    """Create a sample JSON file."""
+    json_path = os.path.join(temp_dir, "test.json")
+    json_data = {
+        "test_key": "test_value",
+        "number": 42,
+        "list": [1, 2, 3],
+    }
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(json_data, f)
+    return json_path
+
+
+@pytest.fixture
+def mock_vault(temp_dir):
+    """Create a mock Obsidian vault with sample files."""
     vault_path = os.path.join(temp_dir, "vault")
     os.makedirs(vault_path)
 
@@ -63,34 +84,11 @@ def mock_vault(temp_dir: str) -> str:
 
 
 @pytest.fixture
-def empty_vault(temp_dir: str) -> str:
-    """Return an empty vault directory."""
+def empty_vault(temp_dir):
+    """Create an empty Obsidian vault."""
     vault_path = os.path.join(temp_dir, "empty_vault")
     os.makedirs(vault_path)
     return vault_path
-
-
-# ---------------------------------------------------------------------------
-# Config/data file helpers
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def sample_config_yaml(temp_dir: str) -> Path:
-    """Create a temporary config.yaml for CLI tests."""
-    config_path = Path(temp_dir) / "config.yaml"
-    config_data = {
-        "vault_path": "/path/to/vault",
-        "dry_run": True,
-        "fast_dry_run": False,
-        "batch_size": 5,
-        "file_ordering": "recent",
-        "ollama_base_url": "http://localhost:11434",
-        "ollama_model": "qwen2.5:3b",
-    }
-    with config_path.open("w", encoding="utf-8") as fh:
-        yaml.safe_dump(config_data, fh)
-    return config_path
 
 
 @pytest.fixture
@@ -238,9 +236,9 @@ def mock_ollama_response() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_ollama_success(mock_ollama_response: Dict[str, Any]):
-    """Patch requests.post so that it returns a canned JSON payload."""
-    with patch("requests.post") as mock_post:
+def mock_ollama_success(mock_ollama_response):
+    """Mock successful Ollama API call."""
+    with patch('requests.post') as mock_post:
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = mock_ollama_response
         mock_post.return_value.raise_for_status = Mock()
@@ -249,8 +247,8 @@ def mock_ollama_success(mock_ollama_response: Dict[str, Any]):
 
 @pytest.fixture
 def mock_ollama_timeout():
-    """Force requests.post to raise a timeout."""
-    with patch("requests.post") as mock_post:
+    """Mock Ollama API timeout."""
+    with patch('requests.post') as mock_post:
         import requests
 
         mock_post.side_effect = requests.exceptions.Timeout("Connection timeout")
@@ -259,8 +257,8 @@ def mock_ollama_timeout():
 
 @pytest.fixture
 def mock_ollama_error():
-    """Force requests.post to raise a generic RequestException."""
-    with patch("requests.post") as mock_post:
+    """Mock Ollama API error."""
+    with patch('requests.post') as mock_post:
         import requests
 
         mock_post.side_effect = requests.exceptions.RequestException("API error")
