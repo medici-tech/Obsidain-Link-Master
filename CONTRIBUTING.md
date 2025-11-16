@@ -37,7 +37,7 @@ This project adheres to a simple principle: **Be respectful and constructive**. 
 
 ### Prerequisites
 
-- Python 3.7+
+- Python 3.9+
 - Ollama (for local AI processing)
 - An Obsidian vault for testing
 

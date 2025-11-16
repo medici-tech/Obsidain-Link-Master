@@ -1,7 +1,7 @@
 # Obsidian Auto-Linker - Enhanced Edition
 
 ![Version](https://img.shields.io/badge/version-2.0-blue)
-![Python](https://img.shields.io/badge/python-3.7+-green)
+![Python](https://img.shields.io/badge/python-3.9+-green)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
 An intelligent tool that automatically processes your Obsidian vault files and creates a Map of Content (MOC) structure with AI-powered linking, featuring a **stunning live terminal dashboard** optimized for modern hardware.
@@ -85,13 +85,15 @@ The live dashboard shows:
 
 ### System Requirements
 - **OS**: macOS 10.15+ or Linux
-- **Python**: 3.7 or higher
+- **Python**: 3.9 or higher
 - **RAM**: 8GB minimum (16GB recommended for large vaults)
 - **Disk**: 1GB free space minimum
 
 ### Software Requirements
 - **Ollama**: Local AI model server
 - **Python packages**: Listed in `requirements.txt`
+
+> **Why Python 3.9+?** The real-time dashboard and monitoring stack depends on current releases of `rich`, `psutil`, and `requests`. These packages — as pinned in `requirements.txt` — only publish wheels for Python 3.9 and newer, so earlier interpreters no longer receive security or compatibility fixes.
 
 ## 🚀 Quick Start
 
