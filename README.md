@@ -1,6 +1,25 @@
 # 🚀 Enhanced Obsidian Auto-Linker
 
+![CI Tests](https://github.com/medici-tech/Obsidain-Link-Master/workflows/Test%20Suite/badge.svg)
+![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
 An intelligent AI-powered system for automatically categorizing and linking Obsidian vault files using local LLM models with advanced quality control features.
+
+## 📚 Documentation Quick Links
+
+| Document | Description |
+|----------|-------------|
+| **[README.md](README.md)** (this file) | Quick start and overview |
+| **[QUICK_START.md](QUICK_START.md)** | 5-minute setup guide |
+| **[README_ENHANCED.md](README_ENHANCED.md)** | Comprehensive guide (450+ lines) |
+| **[CLAUDE.md](CLAUDE.md)** | Developer/AI assistant guide (80KB) |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | System architecture (28KB) |
+| **[ROADMAP.md](ROADMAP.md)** | Development roadmap (24KB) |
+| **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** | Problem solving (17KB) |
+| **[COMPREHENSIVE_REVIEW.md](COMPREHENSIVE_REVIEW.md)** | Project review |
+| **[configs/](configs/)** | Configuration examples |
+| **[tests/](tests/)** | Test suite (291+ tests) |
 
 ## ✨ Features
 
