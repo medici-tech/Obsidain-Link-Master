@@ -281,15 +281,20 @@ class LiveDashboard:
 
         # M4 specific: Show performance vs efficiency cores
         cores = self.stats['cpu_per_core']
-        if len(cores) == 8:
-            # M4 has 4 P-cores + 4 E-cores
-            p_cores = cores[:4]
-            e_cores = cores[4:]
-            p_avg = sum(p_cores) / len(p_cores)
-            e_avg = sum(e_cores) / len(e_cores)
-            core_info = f"P-cores: {p_avg:.0f}%  E-cores: {e_avg:.0f}%"
-        else:
-            core_info = f"{len(cores)} cores"
+        core_info = "N/A"
+
+        if isinstance(cores, (list, tuple)) and cores:
+            if len(cores) == 8:
+                # M4 has 4 P-cores + 4 E-cores
+                p_cores = cores[:4]
+                e_cores = cores[4:]
+                p_avg = sum(p_cores) / len(p_cores)
+                e_avg = sum(e_cores) / len(e_cores)
+                core_info = f"P-cores: {p_avg:.0f}%  E-cores: {e_avg:.0f}%"
+            else:
+                core_info = f"{len(cores)} cores"
+        elif isinstance(cores, (int, float)):
+            core_info = f"Avg load: {cores:.0f}%"
 
         temp_str = f"{self.stats['temperature']:.0f}°C" if self.stats['temperature'] > 0 else "N/A"
 
