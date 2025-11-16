@@ -105,9 +105,8 @@ OLLAMA_MODEL = config.get('ollama_model', 'qwen3:8b')  # Default to Qwen3:8b for
 OLLAMA_TIMEOUT = config.get('ollama_timeout', 300)  # Default 5 minutes for Qwen3:8b
 OLLAMA_MAX_RETRIES = config.get('ollama_max_retries', 5)  # More retries for complex reasoning
 OLLAMA_TEMPERATURE = config.get('ollama_temperature', 0.1)
+# Fully implemented call_ollama defined after provider configuration
 OLLAMA_MAX_TOKENS = config.get('ollama_max_tokens', 1024)  # More tokens for detailed responses
-
-def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None) -> str:
 # AI Provider selection (ollama or claude)
 AI_PROVIDER = config.get('ai_provider', 'ollama')
 
