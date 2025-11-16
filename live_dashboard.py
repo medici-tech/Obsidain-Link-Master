@@ -280,6 +280,23 @@ class LiveDashboard:
         mem_bar = self._create_bar(mem_pct, 40, "yellow")
 
         # M4 specific: Show performance vs efficiency cores
+        cores_raw = self.stats.get('cpu_per_core') or []
+        try:
+            cores = list(cores_raw)
+        except TypeError:
+            cores = []
+
+        if len(cores) == 8:
+            # M4 has 4 P-cores + 4 E-cores
+            p_cores = cores[:4]
+            e_cores = cores[4:]
+            p_avg = sum(p_cores) / len(p_cores)
+            e_avg = sum(e_cores) / len(e_cores)
+            core_info = f"P-cores: {p_avg:.0f}%  E-cores: {e_avg:.0f}%"
+        elif cores:
+            core_info = f"{len(cores)} cores avg {sum(cores) / len(cores):.0f}%"
+        else:
+            core_info = "cores unavailable"
         cores = self.stats['cpu_per_core']
         core_info = "N/A"
 
