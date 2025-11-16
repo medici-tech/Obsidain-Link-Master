@@ -107,7 +107,6 @@ OLLAMA_MAX_RETRIES = config.get('ollama_max_retries', 5)  # More retries for com
 OLLAMA_TEMPERATURE = config.get('ollama_temperature', 0.1)
 OLLAMA_MAX_TOKENS = config.get('ollama_max_tokens', 1024)  # More tokens for detailed responses
 
-def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None) -> str:
 # AI Provider selection (ollama or claude)
 AI_PROVIDER = config.get('ai_provider', 'ollama')
 
@@ -711,19 +710,7 @@ def analyze_with_balanced_ai(content: str, existing_notes: Dict[str, str]) -> Op
 
     with analytics_lock:
         analytics['cache_misses'] += 1
-    if ai_cache.has(content_hash):
-        cached_result = ai_cache.get(content_hash)
-        analytics['cache_hits'] += 1
-        return ai_cache[content_hash]
 
-    analytics['cache_misses'] += 1
-
-        if dashboard:
-            lookup_time = time.time() - cache_start
-            dashboard.add_cache_hit(lookup_time)
-        return cached_result
-
-    analytics['cache_misses'] += 1
     if dashboard:
         lookup_time = time.time() - cache_start
         dashboard.add_cache_miss(lookup_time)
@@ -1340,9 +1327,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     elif DRY_RUN:
         logger.info("   🔍 DRY RUN MODE - Full AI Analysis")
     else:
-        print("   🚀 LIVE MODE - Processing Files")
-    print("=" * 60)
-    print()
         logger.info("   🚀 LIVE MODE - Processing Files")
     logger.info("=" * 60)
     logger.info("")
@@ -1516,9 +1500,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         if total_estimated_hours >= 1:
             logger.info(f"   ⏰ Estimated time: {total_estimated_hours:.1f} hours (local models are slow)")
         else:
-            print(f"   ⏰ Estimated time: {total_estimated_minutes:.0f} minutes (local models are slow)")
-        print("   💡 Tip: You can stop and resume processing anytime")
-
             logger.info(f"   ⏰ Estimated time: {total_estimated_minutes:.0f} minutes (local models are slow)")
         logger.info("   💡 Tip: You can stop and resume processing anytime")
     
@@ -1871,52 +1852,10 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 show_progress(current_file, "Completed", processed_count, total_files, start_time)
             else:
                 set_file_stage(file_path, 'completed')  # Still mark as completed even if skipped
-                print("📊 Dry run limit reached - generating analytics report...")
-                break
 
-        # Show progress
-        show_progress(current_file, "Processing", processed_count, total_files, start_time)
-
-        # Process the file
-        if process_conversation(file_path, existing_notes, stats):
-            processed_count += 1
-            show_progress(current_file, "Completed", processed_count, total_files, start_time)
-        else:
-            show_progress(current_file, "Skipped", processed_count, total_files, start_time)
-
-        # Save progress after each file
-        save_progress()
-        save_cache()
-
-        # Show file summary
-        print(f"\n📊 File {i} complete:")
-        print(f"   ✅ Processed: {stats['processed']}")
-        print(f"   ⏭️  Skipped: {stats['already_processed']}")
-        print(f"   ❌ Failed: {stats['failed']}")
-        print(f"   🔗 Links added: {stats['links_added']}")
-        print(f"   🏷️  Tags added: {stats['tags_added']}")
-
-            # Process results as they complete
-            for future in as_completed(future_to_file):
-                file_path, success = future.result()
-                if success:
-                    processed_count += 1
-
-    else:
-        # Sequential processing (original logic)
-        for i, file_path in enumerate(all_files, 1):
-            current_file = os.path.basename(file_path)
-            logger.info(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
-
-            # Update dashboard
-            if dashboard:
-                dashboard.update_processing(
-                    total_files=len(all_files),
-                    processed_files=processed_count,
-                    failed_files=stats['failed'],
-                    current_file=current_file,
-                    current_stage="Processing"
-                )
+            # Save progress after each file
+            save_progress()
+            save_cache()
 
             # Show progress
             show_progress(current_file, "Processing", processed_count, total_files, start_time)
@@ -1977,14 +1916,8 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         logger.info(f"🏷️  Tags added: {stats['tags_added']}")
     logger.info(f"⏭️  Already processed: {stats['already_processed']}")
     logger.info(f"❌ Failed: {stats['failed']}")
-        print(f"📊 Processed: {stats['processed']} files")
-        print(f"📄 New files created: {stats['processed']} (with '_linked' suffix)")
-        print(f"🔗 Links added: {stats['links_added']}")
-        print(f"🏷️  Tags added: {stats['tags_added']}")
-    print(f"⏭️  Already processed: {stats['already_processed']}")
-    print(f"❌ Failed: {stats['failed']}")
-    print(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)} (below {CONFIDENCE_THRESHOLD:.0%} threshold)")
-    print(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files flagged for manual review")
+    logger.info(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)} (below {CONFIDENCE_THRESHOLD:.0%} threshold)")
+    logger.info(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files flagged for manual review")
 
     # Incremental processing stats
     if INCREMENTAL_PROCESSING and hash_tracker:
@@ -2023,9 +1956,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     if DRY_RUN:
         logger.info("💡 Set dry_run: false in config.yaml to process for real")
     else:
-        print(f"💾 Backups saved to: {BACKUP_FOLDER}")
-
-    print("=" * 60)
         logger.info(f"💾 Backups saved to: {BACKUP_FOLDER}")
 
     logger.info("=" * 60)
