@@ -204,29 +204,19 @@ class TestCacheOperations:
             load_cache()
 
     def test_cache_performance_benefit(self, sample_cache, sample_markdown_content):
-        """Test that cache provides performance benefit"""
-        import time
+        """Ensure cache hits skip expensive AI calls rather than measuring runtime."""
 
-        # Mock slow AI call
-        def slow_ai_call(*args, **kwargs):
-            time.sleep(0.1)  # Simulate 100ms AI call
-            return {'moc_category': 'Test'}
-
-        # First call (cache miss) - should be slow
         with patch('obsidian_auto_linker_enhanced.ai_cache', {}):
-            with patch('obsidian_auto_linker_enhanced.call_ollama', side_effect=slow_ai_call):
+            with patch('obsidian_auto_linker_enhanced.call_ollama', return_value={'moc_category': 'Test'}) as mock_call:
                 from obsidian_auto_linker_enhanced import analyze_with_balanced_ai, get_content_hash
 
-                start = time.time()
                 result1 = analyze_with_balanced_ai(sample_markdown_content, {})
-                slow_time = time.time() - start
+                assert mock_call.call_count == 1
 
-        # Second call (cache hit) - should be fast
         content_hash = get_content_hash(sample_markdown_content)
         with patch('obsidian_auto_linker_enhanced.ai_cache', {content_hash: result1}):
-            start = time.time()
-            result2 = analyze_with_balanced_ai(sample_markdown_content, {})
-            fast_time = time.time() - start
+            with patch('obsidian_auto_linker_enhanced.call_ollama') as mock_call:
+                result2 = analyze_with_balanced_ai(sample_markdown_content, {})
+                mock_call.assert_not_called()
 
-        # Cache should be significantly faster
-        assert fast_time < slow_time / 10  # At least 10x faster
+        assert result2 == result1

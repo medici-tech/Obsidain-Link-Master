@@ -95,18 +95,14 @@ class TestRealTimeUpdates:
         assert dashboard.stats['ai_requests'] == 20
 
     def test_update_rate_limiting(self, dashboard):
-        """Test that updates don't overwhelm the system"""
-        start_time = time.time()
+        """Ensure bursty updates roll off via the bounded activity log instead of timing throughput."""
 
-        # Rapid fire updates
         for i in range(100):
             dashboard.add_activity(f"Activity {i}")
 
-        elapsed = time.time() - start_time
-
-        # Should complete quickly (not blocked)
-        assert elapsed < 1.0
-        assert len(dashboard.stats['activity_log']) > 0
+        log_entries = list(dashboard.stats.get('recent_activity', []))
+        assert len(log_entries) <= 5
+        assert any("Activity 99" in entry for entry in log_entries)
 
     def test_concurrent_metric_updates(self, dashboard):
         """Test updating multiple metrics simultaneously"""
@@ -259,14 +255,14 @@ class TestActivityLogging:
         dashboard.add_activity("File processed", success=True)
         dashboard.add_activity("Warning occurred", success=False)
 
-        assert len(dashboard.stats['activity_log']) == 3
+        assert len(dashboard.stats['recent_activity']) == 3
 
     def test_activity_success_tracking(self, dashboard):
         """Test tracking success/failure in activities"""
         dashboard.add_activity("Success", success=True)
         dashboard.add_activity("Failure", success=False)
 
-        activities = dashboard.stats['activity_log']
+        activities = dashboard.stats['recent_activity']
         success_activities = [a for a in activities if a.get('success', True)]
         assert len(success_activities) >= 1
 
@@ -277,7 +273,7 @@ class TestActivityLogging:
             dashboard.add_activity(f"Activity {i}")
 
         # Should have max size (typically 100-200)
-        log_size = len(dashboard.stats['activity_log'])
+        log_size = len(dashboard.stats['recent_activity'])
         assert log_size <= 500  # Implementation specific
 
 
@@ -394,7 +390,7 @@ class TestDashboardLifecycle:
 
         try:
             dashboard.add_activity("Test activity")
-            assert len(dashboard.stats['activity_log']) > 0
+            assert len(dashboard.stats['recent_activity']) > 0
         finally:
             dashboard.stop()
 
@@ -522,26 +518,22 @@ class TestLiveMonitoringIntegration:
             assert dashboard.stats['ai_requests'] == 10
             assert dashboard.stats['cache_hits'] + dashboard.stats['cache_misses'] == 10
             assert len(dashboard.stats['file_processing_times']) == 10
-            assert len(dashboard.stats['activity_log']) > 0
+            assert len(dashboard.stats['recent_activity']) > 0
 
         finally:
             dashboard.stop()
 
     def test_dashboard_under_load(self, dashboard):
-        """Test dashboard performance under high load"""
+        """Verify high-volume updates still keep only the latest entries instead of asserting runtime."""
         dashboard.start()
 
         try:
-            start_time = time.time()
-
-            # Rapid updates
             for i in range(1000):
                 dashboard.add_activity(f"Activity {i}")
 
-            elapsed = time.time() - start_time
-
-            # Should handle load efficiently
-            assert elapsed < 5.0  # Should complete in under 5 seconds
+            log_entries = list(dashboard.stats.get('recent_activity', []))
+            assert len(log_entries) <= 5
+            assert any("Activity 999" in entry for entry in log_entries)
 
         finally:
             dashboard.stop()
