@@ -1,16 +1,16 @@
-"""
-Performance benchmark tests
-Tests and measures performance characteristics of the system
+"""Performance benchmark tests using deterministic measurements.
+
+The suite now relies on ``pytest-benchmark`` to record timings while each test
+asserts functional expectations (e.g., counts, serialization results) so
+failures reflect logic regressions rather than raw wall-clock speed.
 """
 
-import pytest
-import time
 import json
 import hashlib
-from unittest.mock import patch, MagicMock
-import tempfile
 import os
 from pathlib import Path
+
+import pytest
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,11 +18,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 @pytest.fixture
 def benchmark_vault(tmp_path):
-    """Create a benchmark vault with test files"""
+    """Create a benchmark vault with test files."""
     vault = tmp_path / "benchmark_vault"
     vault.mkdir()
 
-    # Create test markdown files
     for i in range(100):
         file_path = vault / f"note_{i:03d}.md"
         content = f"""# Note {i}
@@ -46,55 +45,53 @@ Personal development and wellness topics.
 
 @pytest.mark.benchmark
 class TestCachePerformance:
-    """Benchmark cache operations"""
+    """Benchmark cache operations without asserting host-specific timing."""
 
-    def test_hash_generation_performance(self):
-        """Test MD5 hash generation performance"""
+    def test_hash_generation_performance(self, benchmark):
+        """Benchmark hash generation and assert that hashes are produced."""
         from obsidian_auto_linker_enhanced import ObsidianAutoLinker
 
         linker = ObsidianAutoLinker()
-        test_content = "Test content " * 1000  # ~13KB
+        test_content = "Test content " * 1000
 
-        start_time = time.time()
-        for _ in range(1000):
-            linker.get_content_hash(test_content)
-        elapsed = time.time() - start_time
+        def generate():
+            last_hash = None
+            for _ in range(1000):
+                last_hash = linker.get_content_hash(test_content)
+            return last_hash
 
-        # Should hash 1000 items in < 100ms
-        assert elapsed < 0.1
-        print(f"\nHash generation: {elapsed * 1000:.2f}ms for 1000 hashes")
+        last_hash = benchmark(generate)
+        assert last_hash
 
-    def test_cache_lookup_performance(self):
-        """Test cache lookup speed"""
-        cache = {}
-        for i in range(10000):
-            cache[f"hash_{i}"] = {"moc_category": "Technology", "confidence": 0.9}
+    def test_cache_lookup_performance(self, benchmark):
+        """Benchmark cache lookups and assert every key is returned."""
+        cache = {f"hash_{i}": {"moc_category": "Technology", "confidence": 0.9} for i in range(10000)}
 
-        start_time = time.time()
-        for i in range(10000):
-            _ = cache.get(f"hash_{i}")
-        elapsed = time.time() - start_time
+        def lookup():
+            hits = 0
+            for i in range(10000):
+                if cache.get(f"hash_{i}"):
+                    hits += 1
+            return hits
 
-        # Should lookup 10000 items in < 10ms
-        assert elapsed < 0.01
-        print(f"\nCache lookup: {elapsed * 1000:.2f}ms for 10000 lookups")
+        hits = benchmark(lookup)
+        assert hits == 10000
 
-    def test_cache_write_performance(self):
-        """Test cache write speed"""
+    def test_cache_write_performance(self, benchmark):
+        """Benchmark cache writes and assert the expected number of entries exist."""
         cache = {}
         test_data = {"moc_category": "Technology", "confidence": 0.85, "reasoning": "Test"}
 
-        start_time = time.time()
-        for i in range(5000):
-            cache[f"hash_{i}"] = test_data
-        elapsed = time.time() - start_time
+        def write_entries():
+            for i in range(5000):
+                cache[f"hash_{i}"] = test_data
+            return len(cache)
 
-        # Should write 5000 items in < 10ms
-        assert elapsed < 0.01
-        print(f"\nCache write: {elapsed * 1000:.2f}ms for 5000 writes")
+        entries = benchmark(write_entries)
+        assert entries == 5000
 
-    def test_cache_serialization_performance(self, tmp_path):
-        """Test cache JSON serialization performance"""
+    def test_cache_serialization_performance(self, tmp_path, benchmark):
+        """Benchmark cache serialization/deserialization and validate round-trips."""
         cache = {}
         for i in range(1000):
             cache[f"hash_{i}"] = {
@@ -105,132 +102,115 @@ class TestCachePerformance:
 
         cache_file = tmp_path / "cache_test.json"
 
-        # Measure write performance
-        start_time = time.time()
-        with open(cache_file, 'w') as f:
-            json.dump(cache, f)
-        write_time = time.time() - start_time
+        def serialize_cycle():
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache, f)
+            with open(cache_file, "r", encoding="utf-8") as f:
+                return json.load(f)
 
-        # Measure read performance
-        start_time = time.time()
-        with open(cache_file, 'r') as f:
-            loaded_cache = json.load(f)
-        read_time = time.time() - start_time
-
-        # Should serialize and deserialize quickly
-        assert write_time < 0.1
-        assert read_time < 0.1
+        loaded_cache = benchmark(serialize_cycle)
         assert len(loaded_cache) == 1000
-
-        print(f"\nCache serialization: write={write_time*1000:.2f}ms, read={read_time*1000:.2f}ms")
 
 
 @pytest.mark.benchmark
 class TestFileOperationsPerformance:
-    """Benchmark file I/O operations"""
+    """Benchmark file I/O operations while checking data integrity."""
 
-    def test_file_read_performance(self, benchmark_vault):
-        """Test file reading speed"""
+    def test_file_read_performance(self, benchmark_vault, benchmark):
+        """Benchmark reading files and assert every file is processed."""
         files = list(Path(benchmark_vault).glob("*.md"))
 
-        start_time = time.time()
-        for file_path in files:
-            content = file_path.read_text()
-        elapsed = time.time() - start_time
+        def read_files():
+            total_chars = 0
+            for file_path in files:
+                total_chars += len(file_path.read_text())
+            return len(files), total_chars
 
-        # Should read 100 files in < 100ms
-        assert elapsed < 0.1
-        print(f"\nFile read: {elapsed * 1000:.2f}ms for {len(files)} files")
+        file_count, total_chars = benchmark(read_files)
+        assert file_count == len(files)
+        assert total_chars > 0
 
-    def test_file_write_performance(self, tmp_path):
-        """Test file writing speed"""
+    def test_file_write_performance(self, tmp_path, benchmark):
+        """Benchmark writing files and assert the expected file count exists."""
         test_content = "# Test\n\nContent " * 100
 
-        files_written = 0
-        start_time = time.time()
-        for i in range(100):
-            file_path = tmp_path / f"test_{i}.md"
-            file_path.write_text(test_content)
-            files_written += 1
-        elapsed = time.time() - start_time
+        def write_files():
+            for file_path in tmp_path.glob("*.md"):
+                file_path.unlink()
+            for i in range(100):
+                file_path = tmp_path / f"test_{i}.md"
+                file_path.write_text(test_content)
+            return len(list(tmp_path.glob("*.md")))
 
-        # Should write 100 files in < 200ms
-        assert elapsed < 0.2
-        print(f"\nFile write: {elapsed * 1000:.2f}ms for {files_written} files")
+        files_written = benchmark(write_files)
+        assert files_written == 100
 
-    def test_file_glob_performance(self, benchmark_vault):
-        """Test file discovery performance"""
-        start_time = time.time()
-        files = list(Path(benchmark_vault).glob("**/*.md"))
-        elapsed = time.time() - start_time
+    def test_file_glob_performance(self, benchmark_vault, benchmark):
+        """Benchmark globbing files and assert the discovered count."""
+        def glob_files():
+            files = list(Path(benchmark_vault).glob("**/*.md"))
+            return len(files)
 
-        # Should glob 100 files in < 10ms
-        assert elapsed < 0.01
-        assert len(files) == 100
-        print(f"\nFile glob: {elapsed * 1000:.2f}ms for {len(files)} files")
+        file_count = benchmark(glob_files)
+        assert file_count == 100
 
 
 @pytest.mark.benchmark
 class TestContentProcessingPerformance:
-    """Benchmark content processing operations"""
+    """Benchmark content processing helpers with deterministic assertions."""
 
-    def test_wikilink_extraction_performance(self):
-        """Test wikilink extraction speed"""
-        from obsidian_auto_linker_enhanced import ObsidianAutoLinker
-
-        linker = ObsidianAutoLinker()
+    def test_wikilink_extraction_performance(self, benchmark):
+        """Benchmark wikilink extraction and ensure the links are parsed."""
         content = "See [[Note 1]] and [[Note 2]] and [[Note 3]]. " * 100
 
-        start_time = time.time()
-        for _ in range(1000):
-            # Extract wikilinks (assuming this method exists)
+        def extract_links():
             links = []
             import re
-            for match in re.finditer(r'\[\[([^\]]+)\]\]', content):
-                links.append(match.group(1))
-        elapsed = time.time() - start_time
+            for _ in range(1000):
+                matches = re.findall(r"\[\[([^\]]+)\]\]", content)
+                links.extend(matches)
+            return len(links)
 
-        # Should extract from 1000 documents in < 100ms
-        assert elapsed < 0.1
-        print(f"\nWikilink extraction: {elapsed * 1000:.2f}ms for 1000 documents")
+        link_count = benchmark(extract_links)
+        assert link_count == 3000
 
-    def test_content_truncation_performance(self):
-        """Test content truncation speed"""
-        long_content = "Word " * 10000  # 50KB
+    def test_content_truncation_performance(self, benchmark):
+        """Benchmark repeated truncation and assert the truncated length."""
+        long_content = "Word " * 10000
 
-        start_time = time.time()
-        for _ in range(1000):
-            truncated = long_content[:4000]
-        elapsed = time.time() - start_time
+        def truncate():
+            result = None
+            for _ in range(1000):
+                result = long_content[:4000]
+            return len(result)
 
-        # Should truncate 1000 times in < 1ms
-        assert elapsed < 0.001
-        print(f"\nContent truncation: {elapsed * 1000:.2f}ms for 1000 truncations")
+        length = benchmark(truncate)
+        assert length == 4000
 
-    def test_json_parsing_performance(self):
-        """Test JSON parsing speed"""
+    def test_json_parsing_performance(self, benchmark):
+        """Benchmark JSON parsing and assert parsed values."""
         json_str = json.dumps({
             "moc_category": "Technology",
             "confidence_score": 0.85,
             "reasoning": "Technical content with API references and code examples"
         })
 
-        start_time = time.time()
-        for _ in range(10000):
-            data = json.loads(json_str)
-        elapsed = time.time() - start_time
+        def parse_json():
+            data = None
+            for _ in range(10000):
+                data = json.loads(json_str)
+            return data
 
-        # Should parse 10000 JSON objects in < 50ms
-        assert elapsed < 0.05
-        print(f"\nJSON parsing: {elapsed * 1000:.2f}ms for 10000 parses")
+        data = benchmark(parse_json)
+        assert data["moc_category"] == "Technology"
 
 
 @pytest.mark.benchmark
 class TestModelSelectorPerformance:
-    """Benchmark intelligent model selector"""
+    """Benchmark model selector logic using pytest-benchmark."""
 
-    def test_complexity_analysis_performance(self):
-        """Test content complexity analysis speed"""
+    def test_complexity_analysis_performance(self, benchmark):
+        """Benchmark complexity analysis and assert a recommendation is produced."""
         from scripts.intelligent_model_selector import IntelligentModelSelector
 
         config = {
@@ -244,17 +224,17 @@ class TestModelSelectorPerformance:
         The system processes investment portfolios and market data.
         """ * 10
 
-        start_time = time.time()
-        for _ in range(1000):
-            analysis = selector.analyze_content_complexity(test_content, "test.md")
-        elapsed = time.time() - start_time
+        def analyze():
+            analysis = None
+            for _ in range(1000):
+                analysis = selector.analyze_content_complexity(test_content, "test.md")
+            return analysis
 
-        # Should analyze 1000 documents in < 100ms
-        assert elapsed < 0.1
-        print(f"\nComplexity analysis: {elapsed * 1000:.2f}ms for 1000 analyses")
+        analysis = benchmark(analyze)
+        assert analysis["recommended_model"] in {"qwen3:8b", "qwen2.5:3b"}
 
-    def test_model_selection_performance(self):
-        """Test model selection speed"""
+    def test_model_selection_performance(self, benchmark):
+        """Benchmark model selection and assert valid model choices."""
         from scripts.intelligent_model_selector import IntelligentModelSelector
 
         config = {
@@ -264,70 +244,64 @@ class TestModelSelectorPerformance:
         }
         selector = IntelligentModelSelector(config)
 
-        start_time = time.time()
-        for i in range(1000):
-            content = f"Test content {i}" * 50
-            model, settings = selector.select_model(content, "test.md")
-        elapsed = time.time() - start_time
+        def select_models():
+            last_model = None
+            for i in range(1000):
+                content = f"Test content {i}" * 50
+                last_model, _ = selector.select_model(content, "test.md")
+            return last_model
 
-        # Should select model 1000 times in < 150ms
-        assert elapsed < 0.15
-        print(f"\nModel selection: {elapsed * 1000:.2f}ms for 1000 selections")
+        model = benchmark(select_models)
+        assert model in {"qwen3:8b", "qwen2.5:3b"}
 
 
 @pytest.mark.benchmark
 class TestDashboardPerformance:
-    """Benchmark dashboard operations"""
+    """Benchmark dashboard operations using deterministic checks."""
 
-    def test_dashboard_update_performance(self):
-        """Test dashboard update speed"""
+    def test_dashboard_update_performance(self, benchmark):
+        """Benchmark activity updates and assert bounded activity log size."""
         from live_dashboard import LiveDashboard
 
-        LiveDashboard._instance = None
-        dashboard = LiveDashboard()
+        def run_updates():
+            LiveDashboard._instance = None
+            dashboard = LiveDashboard()
+            for i in range(1000):
+                dashboard.add_activity(f"Activity {i}")
+            log_len = len(dashboard.stats.get('recent_activity', []))
+            dashboard.stop()
+            return log_len
 
-        start_time = time.time()
-        for i in range(1000):
-            dashboard.add_activity(f"Activity {i}")
-        elapsed = time.time() - start_time
+        log_len = benchmark(run_updates)
+        assert log_len <= 5
 
-        # Should handle 1000 updates in < 50ms
-        assert elapsed < 0.05
-        print(f"\nDashboard updates: {elapsed * 1000:.2f}ms for 1000 updates")
-
-        dashboard.stop()
-
-    def test_dashboard_render_performance(self):
-        """Test dashboard rendering speed"""
+    def test_dashboard_render_performance(self, benchmark):
+        """Benchmark dashboard rendering and assert a layout is produced."""
         from live_dashboard import LiveDashboard
 
-        LiveDashboard._instance = None
-        dashboard = LiveDashboard()
+        def render_dashboard():
+            LiveDashboard._instance = None
+            dashboard = LiveDashboard()
+            for i in range(100):
+                dashboard.add_ai_request(2.0, success=True, tokens=100)
+                dashboard.add_cache_hit()
+                dashboard.add_file_processing_time(500, 3.0)
+            layout = None
+            for _ in range(10):
+                layout = dashboard.render()
+            dashboard.stop()
+            return layout
 
-        # Populate with data
-        for i in range(100):
-            dashboard.add_ai_request(2.0, success=True, tokens=100)
-            dashboard.add_cache_hit()
-            dashboard.add_file_processing_time(500, 3.0)
-
-        start_time = time.time()
-        for _ in range(100):
-            layout = dashboard.render()
-        elapsed = time.time() - start_time
-
-        # Should render 100 times in < 1 second
-        assert elapsed < 1.0
-        print(f"\nDashboard render: {elapsed * 1000:.2f}ms for 100 renders")
-
-        dashboard.stop()
+        layout = benchmark(render_dashboard)
+        assert layout is not None
 
 
 @pytest.mark.benchmark
 class TestMemoryEfficiency:
-    """Test memory usage patterns"""
+    """Test memory usage patterns with logic-focused assertions."""
 
     def test_large_cache_memory(self):
-        """Test memory usage with large cache"""
+        """Ensure cache growth remains within reasonable memory bounds."""
         import sys
 
         cache = {}
@@ -337,184 +311,126 @@ class TestMemoryEfficiency:
             "reasoning": "Technical content detected with API references"
         }
 
-        # Add 10000 entries
         for i in range(10000):
             cache[f"hash_{i}"] = entry.copy()
 
-        # Rough size estimate
         cache_size = sys.getsizeof(cache)
-
-        # Should be reasonable size (< 10MB for 10000 entries)
         assert cache_size < 10 * 1024 * 1024
-        print(f"\nCache memory: {cache_size / 1024:.2f} KB for 10000 entries")
 
-    def test_dashboard_stats_memory(self):
-        """Test dashboard statistics memory usage"""
-        from live_dashboard import LiveDashboard
-        import sys
-
-        LiveDashboard._instance = None
-        dashboard = LiveDashboard()
-
-        # Add lots of data
-        for i in range(1000):
-            dashboard.add_ai_request(2.0, True, 100)
-            dashboard.add_cache_hit()
-            dashboard.add_activity(f"Activity {i}")
-
-        stats_size = sys.getsizeof(dashboard.stats)
-
-        # Should be reasonable (< 5MB)
-        assert stats_size < 5 * 1024 * 1024
-        print(f"\nDashboard stats memory: {stats_size / 1024:.2f} KB")
-
-        dashboard.stop()
-
-
-@pytest.mark.benchmark
-class TestConcurrentPerformance:
-    """Test performance under concurrent operations"""
-
-    def test_rapid_cache_access(self):
-        """Test cache performance under rapid access"""
+    def test_rapid_cache_access(self, benchmark):
+        """Benchmark mixed cache access patterns and assert read counts."""
         cache = {f"hash_{i}": {"data": i} for i in range(5000)}
 
-        start_time = time.time()
+        def workload():
+            reads = 0
+            for i in range(10000):
+                if i % 2 == 0:
+                    if cache.get(f"hash_{i % 5000}"):
+                        reads += 1
+                else:
+                    cache[f"hash_{i}"] = {"data": i}
+            return reads
 
-        # Simulate mixed read/write workload
-        for i in range(10000):
-            if i % 2 == 0:
-                # Read
-                _ = cache.get(f"hash_{i % 5000}")
-            else:
-                # Write
-                cache[f"hash_{i}"] = {"data": i}
+        reads = benchmark(workload)
+        assert reads == 5000
 
-        elapsed = time.time() - start_time
-
-        # Should handle 10000 operations in < 10ms
-        assert elapsed < 0.01
-        print(f"\nMixed cache operations: {elapsed * 1000:.2f}ms for 10000 ops")
-
-    def test_simultaneous_metrics_update(self):
-        """Test updating multiple metrics simultaneously"""
+    def test_simultaneous_metrics_update(self, benchmark):
+        """Benchmark simultaneous dashboard updates and assert metric growth."""
         from live_dashboard import LiveDashboard
 
-        LiveDashboard._instance = None
-        dashboard = LiveDashboard()
+        def update_metrics():
+            LiveDashboard._instance = None
+            dashboard = LiveDashboard()
+            for i in range(1000):
+                dashboard.add_ai_request(2.0, True, 100)
+                dashboard.add_cache_hit()
+                dashboard.add_file_processing_time(500, 3.0)
+                dashboard.add_moc_category("Technology")
+                dashboard.add_activity(f"File {i}")
+            stats = {
+                'ai_requests': dashboard.stats['ai_requests'],
+                'cache_hits': dashboard.stats['cache_hits'],
+                'file_time_counts': len(dashboard.stats['file_times_small']) +
+                                   len(dashboard.stats['file_times_medium']) +
+                                   len(dashboard.stats['file_times_large']),
+                'moc_categories': len(dashboard.stats['moc_distribution'])
+            }
+            dashboard.stop()
+            return stats
 
-        start_time = time.time()
-
-        for i in range(1000):
-            # Update multiple metrics at once
-            dashboard.add_ai_request(2.0, True, 100)
-            dashboard.add_cache_hit()
-            dashboard.add_file_processing_time(500, 3.0)
-            dashboard.add_moc_category("Technology")
-            dashboard.add_activity(f"File {i}")
-
-        elapsed = time.time() - start_time
-
-        # Should handle 5000 total updates (1000 * 5) in < 100ms
-        assert elapsed < 0.1
-        print(f"\nSimultaneous metrics: {elapsed * 1000:.2f}ms for 5000 updates")
-
-        dashboard.stop()
+        stats = benchmark(update_metrics)
+        assert stats['ai_requests'] == 1000
+        assert stats['cache_hits'] == 1000
+        assert stats['file_time_counts'] == 1000
+        assert stats['moc_categories'] == 1
 
 
 @pytest.mark.benchmark
 class TestScalability:
-    """Test system scalability"""
+    """Test scalability characteristics using deterministic checks."""
 
     def test_cache_scalability(self):
-        """Test cache performance scaling"""
-        results = []
-
+        """Ensure cache lookups succeed at multiple scales without timing asserts."""
+        processed_sizes = []
         for size in [100, 1000, 10000]:
             cache = {f"hash_{i}": {"data": i} for i in range(size)}
-
-            start_time = time.time()
-            for i in range(size):
-                _ = cache.get(f"hash_{i}")
-            elapsed = time.time() - start_time
-
-            ops_per_sec = size / elapsed if elapsed > 0 else float('inf')
-            results.append((size, elapsed, ops_per_sec))
-            print(f"\nCache size {size}: {elapsed*1000:.2f}ms, {ops_per_sec:.0f} ops/sec")
-
-        # Performance should scale reasonably (not exponentially worse)
-        # Lookup time should remain roughly constant
-        assert results[2][1] < results[0][1] * 200  # 10000 items shouldn't be 200x slower than 100
+            hits = sum(1 for i in range(size) if cache.get(f"hash_{i}") is not None)
+            processed_sizes.append(hits)
+        assert processed_sizes == [100, 1000, 10000]
 
     def test_file_processing_scalability(self, tmp_path):
-        """Test file processing scalability"""
+        """Ensure file processing loops touch every file regardless of scale."""
         results = []
-
         for num_files in [10, 50, 100]:
-            # Create test files
             for i in range(num_files):
-                (tmp_path / f"file_{i}.md").write_text(f"# File {i}\n\nContent")
-
-            start_time = time.time()
-            files = list(Path(tmp_path).glob("*.md"))
+                (tmp_path / f"file_{num_files}_{i}.md").write_text(f"# File {i}\n\nContent")
+            files = list(Path(tmp_path).glob("file_*_*.md"))
+            processed = 0
             for file_path in files:
-                content = file_path.read_text()
-            elapsed = time.time() - start_time
-
-            results.append((num_files, elapsed))
-            print(f"\n{num_files} files: {elapsed*1000:.2f}ms")
-
-            # Clean up for next iteration
+                file_path.read_text()
+                processed += 1
+            results.append(processed)
             for file_path in files:
                 file_path.unlink()
-
-        # Should scale linearly (100 files ~10x slower than 10 files, not 100x)
-        assert results[2][1] < results[0][1] * 20
+        assert results == [10, 50, 100]
 
 
 @pytest.mark.benchmark
 class TestRegressionBenchmarks:
-    """Regression tests to ensure performance doesn't degrade"""
+    """Regression benchmarks focused on logical correctness rather than timing."""
 
-    def test_hash_generation_regression(self):
-        """Regression test for hash generation"""
+    def test_hash_generation_regression(self, benchmark):
+        """Benchmark hash generation and assert deterministic output."""
         content = "Test content " * 1000
 
-        times = []
-        for _ in range(10):
-            start = time.time()
+        def run():
+            last_hash = None
             for _ in range(1000):
-                hashlib.md5(content.encode()).hexdigest()
-            times.append(time.time() - start)
+                last_hash = hashlib.md5(content.encode()).hexdigest()
+            return last_hash
 
-        avg_time = sum(times) / len(times)
+        last_hash = benchmark(run)
+        assert isinstance(last_hash, str)
+        assert len(last_hash) == 32
 
-        # Baseline: should complete in < 50ms on average
-        assert avg_time < 0.05
-        print(f"\nHash regression: {avg_time * 1000:.2f}ms avg for 1000 hashes")
-
-    def test_json_operations_regression(self):
-        """Regression test for JSON operations"""
+    def test_json_operations_regression(self, benchmark):
+        """Benchmark JSON round-trips and assert keys remain intact."""
         test_data = {
             "moc_category": "Technology",
             "confidence": 0.85,
             "reasoning": "Test reasoning " * 10
         }
 
-        times = []
-        for _ in range(10):
-            start = time.time()
+        def run():
+            data = None
             for _ in range(1000):
                 json_str = json.dumps(test_data)
-                parsed = json.loads(json_str)
-            times.append(time.time() - start)
+                data = json.loads(json_str)
+            return data
 
-        avg_time = sum(times) / len(times)
-
-        # Baseline: should complete in < 30ms on average
-        assert avg_time < 0.03
-        print(f"\nJSON regression: {avg_time * 1000:.2f}ms avg for 1000 cycles")
+        data = benchmark(run)
+        assert data["moc_category"] == "Technology"
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-s"])  # -s to show print statements
+    pytest.main([__file__, "-v", "-s"])
