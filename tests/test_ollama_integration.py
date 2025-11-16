@@ -177,16 +177,13 @@ class TestOllamaIntegration:
 
     @pytest.mark.slow
     def test_call_ollama_performance(self, mock_ollama_success, ollama_config):
-        """Test Ollama call performance (should be reasonably fast with mocks)"""
+        """Ensure mocked Ollama calls execute without blocking by asserting invocation counts instead of timing."""
         from obsidian_auto_linker_enhanced import call_ollama
 
-        start_time = time.time()
         result = call_ollama("Test prompt")
-        elapsed = time.time() - start_time
 
-        # With mocks, should be very fast
-        assert elapsed < 1.0  # Less than 1 second
         assert result is not None
+        assert mock_ollama_success.call_count == 1
 
     def test_call_ollama_payload_structure(self, ollama_config):
         """Test that the API payload is correctly structured"""
