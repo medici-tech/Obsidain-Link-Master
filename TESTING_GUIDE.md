@@ -9,7 +9,7 @@
 ```bash
 cd /home/user/Obsidain-Link-Master
 
-# Check Python version (need 3.7+)
+# Check Python version (need 3.9+ because of dashboard dependencies)
 python3 --version
 
 # Install dependencies
@@ -537,7 +537,7 @@ If tests fail:
 1. Note which test failed
 2. Check the troubleshooting section
 3. Verify dependencies are installed
-4. Check Python version (need 3.7+)
+4. Check Python version (need 3.9+)
 5. Review error messages carefully
 
 ---

@@ -437,7 +437,7 @@ python3 run_with_dashboard.py
 
 **Import errors**
 - Install dependencies: `pip3 install -r requirements.txt`
-- Use Python 3.7+: `python3 --version`
+- Use Python 3.9+: `python3 --version`
 
 **Slow updates**
 - Dashboard updates every 30s (normal)
