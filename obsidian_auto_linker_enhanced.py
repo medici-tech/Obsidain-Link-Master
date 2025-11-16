@@ -352,16 +352,15 @@ progress_data = {
 }
 progress_lock = threading.RLock()  # Thread-safe progress updates
 
-# Cache for AI responses (BoundedCache with LRU eviction)
-ai_cache = create_bounded_cache(config)
+# Cache for AI responses (BoundedCache with LRU eviction to prevent memory leaks)
+logger.info(f"Initializing bounded cache: max_size_mb={MAX_CACHE_SIZE_MB}, max_entries={MAX_CACHE_ENTRIES}")
+ai_cache = BoundedCache(max_size_mb=MAX_CACHE_SIZE_MB, max_entries=MAX_CACHE_ENTRIES)
 
 # Threading locks for parallel processing
-cache_lock = threading.Lock()
-progress_lock = threading.Lock()
-analytics_lock = threading.Lock()
-hash_tracker_lock = threading.Lock()
-# Cache for AI responses (bounded with LRU eviction)
-ai_cache = BoundedCache(max_size_mb=MAX_CACHE_SIZE_MB, max_entries=MAX_CACHE_ENTRIES)
+cache_lock = threading.RLock()  # Reentrant lock for nested cache operations
+progress_lock = threading.RLock()
+analytics_lock = threading.RLock()
+hash_tracker_lock = threading.RLock()
 
 # Incremental processing tracker
 incremental_tracker = IncrementalTracker()
@@ -501,46 +500,12 @@ def get_file_stage(filepath: str) -> str:
         return stage_data.get('stage', 'pending')
 
 
-def load_cache():
-    """Load AI cache from file (handled by BoundedCache init)"""
-    if not CACHE_ENABLED:
-        return
-
-    cache_file = config.get('cache_file', '.ai_cache.json')
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, 'r') as f:
-                global ai_cache
-                data = json.load(f)
-                if data and isinstance(data, dict):
-                    ai_cache = data
-                else:
-                    ai_cache = {}
-        except (json.JSONDecodeError, ValueError):
-            ai_cache = {}
-        except Exception as e:
-            print(f"⚠️  Could not load cache: {e}")
-
-        if ai_cache:
-            print(f"💾 Loaded cache: {len(ai_cache)} cached responses")
-    # Cache is already loaded in create_bounded_cache()
-    # Just display info
-    cache_size = len(ai_cache)
-    if cache_size > 0:
-        stats = ai_cache.get_stats()
-        print(f"💾 Loaded cache: {cache_size} entries (max: {stats['max_size']})")
-        print(f"   Hit rate: {stats['hit_rate']}, Evictions: {stats['evictions']}")
-    data = {
-        'processed_files': list(progress_data['processed_files']),
-        'failed_files': list(progress_data['failed_files']),
-        'current_batch': progress_data['current_batch'],
-        'last_update': datetime.now().isoformat()
-    }
-    save_json_file(progress_file, data)
-
 def load_cache() -> None:
-    """Load AI cache from file using config_utils"""
+    """Load AI cache from file into BoundedCache"""
+    global ai_cache
+
     if not CACHE_ENABLED:
+        logger.info("Cache disabled in config")
         return
 
     cache_file = config.get('cache_file', '.ai_cache.json')
@@ -556,20 +521,19 @@ def load_cache() -> None:
             dashboard.update_cache_stats(cache_stats['size_mb'], cache_stats['entries'])
 
 def save_cache() -> None:
-    """Save AI cache to file using config_utils"""
+    """Save AI cache to file using BoundedCache.save_to_file()"""
     if not CACHE_ENABLED:
         return
 
     cache_file = config.get('cache_file', '.ai_cache.json')
     try:
-        ai_cache.save_to_file(cache_file)
-        stats = ai_cache.get_stats()
-        print(f"💾 Saved cache: {len(ai_cache)} entries")
-        print(f"   Stats - Hits: {stats['hits']}, Misses: {stats['misses']}, Evictions: {stats['evictions']}")
+        with cache_lock:
+            ai_cache.save_to_file(cache_file)
+            stats = ai_cache.get_stats()
+            logger.info(f"💾 Saved cache: {stats['entries']} entries ({stats['size_mb']:.2f}MB)")
+            logger.info(f"   Cache stats - Utilization: {stats['utilization_pct']:.1f}%, Size: {stats['size_utilization_pct']:.1f}%")
     except Exception as e:
-        print(f"⚠️  Could not save cache: {e}")
-    cache_data = ai_cache.to_dict()
-    save_json_file(cache_file, cache_data)
+        logger.error(f"⚠️  Could not save cache: {e}")
 
 def load_incremental_tracker() -> None:
     """Load incremental tracker from file"""
@@ -836,13 +800,11 @@ Return ONLY the JSON object, no explanations or other text."""
                 logger.error(f"  ❌ No JSON found in response")
                 return None
 
-        # Cache the result
-        ai_cache[content_hash] = result
+        # Cache the result (with automatic LRU eviction if needed)
         with cache_lock:
             ai_cache.set(content_hash, result)
-        
-        # Cache the result (with automatic LRU eviction if needed)
-        ai_cache.set(content_hash, result)
+            stats = ai_cache.get_stats()
+            logger.debug(f"💾 Cached result (cache: {stats['entries']}/{stats['max_entries']} entries, {stats['size_mb']:.1f}/{stats['max_size_mb']}MB)")
 
         return result
     except Exception as e:
