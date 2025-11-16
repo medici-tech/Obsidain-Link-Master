@@ -59,7 +59,7 @@ An intelligent AI-powered system for automatically categorizing and linking Obsi
 ### 1. Clone the Repository
 ```bash
 git clone <repository-url>
-cd "Obsidain Link Master"
+cd Obsidian-Link-Master
 ```
 
 ### 2. Install Dependencies
@@ -167,7 +167,7 @@ python3 obsidian_auto_linker_enhanced.py
 ## 📁 File Structure
 
 ```
-Obsidain Link Master/
+Obsidian-Link-Master/
 ├── obsidian_auto_linker_enhanced.py    # Main application
 ├── config.yaml                         # Configuration file
 ├── requirements.txt                    # Python dependencies
@@ -289,7 +289,7 @@ python3 scripts/model_performance_test.py
 # Install Ollama
 # Clone repository
 git clone <repository-url>
-cd "Obsidain Link Master"
+cd Obsidian-Link-Master
 ```
 
 ### 2. Environment Setup
