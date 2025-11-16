@@ -4,12 +4,12 @@ Incremental Processing Utility
 Tracks file hashes to skip unchanged files during processing
 """
 
-import json
 import hashlib
+import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Set
-from datetime import datetime
 
 
 class FileHashTracker:
@@ -28,10 +28,10 @@ class FileHashTracker:
         self.hash_file = hash_file
         self.hashes: Dict[str, Dict[str, any]] = {}
         self.stats = {
-            'unchanged_files': 0,
-            'changed_files': 0,
-            'new_files': 0,
-            'deleted_files': 0,
+            "unchanged_files": 0,
+            "changed_files": 0,
+            "new_files": 0,
+            "deleted_files": 0,
         }
         self.load()
 
@@ -46,9 +46,9 @@ class FileHashTracker:
             MD5 hash string, or None if file can't be read
         """
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(filepath, "r", encoding="utf-8") as f:
                 content = f.read()
-                return hashlib.md5(content.encode('utf-8')).hexdigest()
+                return hashlib.md5(content.encode("utf-8")).hexdigest()
         except Exception as e:
             print(f"⚠️  Could not hash file {filepath}: {e}")
             return None
@@ -65,9 +65,9 @@ class FileHashTracker:
             return True
 
         try:
-            with open(self.hash_file, 'r') as f:
+            with open(self.hash_file, "r") as f:
                 data = json.load(f)
-                self.hashes = data.get('hashes', {})
+                self.hashes = data.get("hashes", {})
                 return True
         except Exception as e:
             print(f"⚠️  Could not load file hashes: {e}")
@@ -83,12 +83,12 @@ class FileHashTracker:
         """
         try:
             data = {
-                'hashes': self.hashes,
-                'last_updated': datetime.now().isoformat(),
-                'stats': self.stats,
+                "hashes": self.hashes,
+                "last_updated": datetime.now().isoformat(),
+                "stats": self.stats,
             }
 
-            with open(self.hash_file, 'w') as f:
+            with open(self.hash_file, "w") as f:
                 json.dump(data, f, indent=2)
 
             return True
@@ -116,17 +116,17 @@ class FileHashTracker:
 
         if abs_path not in self.hashes:
             # New file
-            self.stats['new_files'] += 1
+            self.stats["new_files"] += 1
             return True
 
-        stored_hash = self.hashes[abs_path].get('hash')
+        stored_hash = self.hashes[abs_path].get("hash")
         if current_hash != stored_hash:
             # File has changed
-            self.stats['changed_files'] += 1
+            self.stats["changed_files"] += 1
             return True
 
         # File unchanged
-        self.stats['unchanged_files'] += 1
+        self.stats["unchanged_files"] += 1
         return False
 
     def update_hash(self, filepath: str, success: bool = True) -> None:
@@ -145,10 +145,10 @@ class FileHashTracker:
         abs_path = os.path.abspath(filepath)
 
         self.hashes[abs_path] = {
-            'hash': current_hash,
-            'last_processed': datetime.now().isoformat(),
-            'success': success,
-            'size': os.path.getsize(filepath) if os.path.exists(filepath) else 0,
+            "hash": current_hash,
+            "last_processed": datetime.now().isoformat(),
+            "success": success,
+            "size": os.path.getsize(filepath) if os.path.exists(filepath) else 0,
         }
 
     def remove_hash(self, filepath: str) -> None:
@@ -161,7 +161,7 @@ class FileHashTracker:
         abs_path = os.path.abspath(filepath)
         if abs_path in self.hashes:
             del self.hashes[abs_path]
-            self.stats['deleted_files'] += 1
+            self.stats["deleted_files"] += 1
 
     def clean_deleted_files(self) -> int:
         """
@@ -181,7 +181,7 @@ class FileHashTracker:
             del self.hashes[filepath]
             deleted_count += 1
 
-        self.stats['deleted_files'] += deleted_count
+        self.stats["deleted_files"] += deleted_count
         return deleted_count
 
     def get_stats(self) -> Dict[str, any]:
@@ -192,30 +192,36 @@ class FileHashTracker:
             Dictionary with stats
         """
         total_tracked = len(self.hashes)
-        total_checked = sum([
-            self.stats['unchanged_files'],
-            self.stats['changed_files'],
-            self.stats['new_files']
-        ])
+        total_checked = sum(
+            [
+                self.stats["unchanged_files"],
+                self.stats["changed_files"],
+                self.stats["new_files"],
+            ]
+        )
 
         return {
-            'total_tracked_files': total_tracked,
-            'total_checked_files': total_checked,
-            'unchanged_files': self.stats['unchanged_files'],
-            'changed_files': self.stats['changed_files'],
-            'new_files': self.stats['new_files'],
-            'deleted_files': self.stats['deleted_files'],
-            'skip_rate': round((self.stats['unchanged_files'] / total_checked * 100)
-                             if total_checked > 0 else 0, 1),
+            "total_tracked_files": total_tracked,
+            "total_checked_files": total_checked,
+            "unchanged_files": self.stats["unchanged_files"],
+            "changed_files": self.stats["changed_files"],
+            "new_files": self.stats["new_files"],
+            "deleted_files": self.stats["deleted_files"],
+            "skip_rate": round(
+                (self.stats["unchanged_files"] / total_checked * 100)
+                if total_checked > 0
+                else 0,
+                1,
+            ),
         }
 
     def reset_stats(self) -> None:
         """Reset statistics counters"""
         self.stats = {
-            'unchanged_files': 0,
-            'changed_files': 0,
-            'new_files': 0,
-            'deleted_files': 0,
+            "unchanged_files": 0,
+            "changed_files": 0,
+            "new_files": 0,
+            "deleted_files": 0,
         }
 
     def __len__(self) -> int:
@@ -241,15 +247,15 @@ def create_hash_tracker(config: Dict = None) -> FileHashTracker:
     if config is None:
         config = {}
 
-    hash_file = config.get('incremental_hash_file', '.file_hashes.json')
+    hash_file = config.get("incremental_hash_file", ".file_hashes.json")
 
     return FileHashTracker(hash_file=hash_file)
 
 
 if __name__ == "__main__":
     # Test the hash tracker
-    import tempfile
     import os
+    import tempfile
 
     print("Testing FileHashTracker...\n")
 
@@ -261,7 +267,7 @@ if __name__ == "__main__":
 
         # Create test file
         test_file = os.path.join(tmpdir, "test.md")
-        with open(test_file, 'w') as f:
+        with open(test_file, "w") as f:
             f.write("# Test Content\n\nOriginal content")
 
         # First check - should be new
@@ -275,7 +281,7 @@ if __name__ == "__main__":
         assert tracker.has_changed(test_file) == False
 
         # Modify file
-        with open(test_file, 'w') as f:
+        with open(test_file, "w") as f:
             f.write("# Test Content\n\nModified content")
 
         # Third check - should be changed
