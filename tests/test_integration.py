@@ -203,6 +203,19 @@ class TestMainProcessorIntegration:
         assert hasattr(processor, 'call_ollama')
         assert hasattr(processor, 'process_conversation')
         assert hasattr(processor, 'analyze_with_balanced_ai')
+"""
+Integration tests for end-to-end workflows
+Tests complete processing pipelines
+"""
+
+import pytest
+import os
+import json
+import shutil
+from unittest.mock import patch, Mock
+
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 @pytest.mark.integration
