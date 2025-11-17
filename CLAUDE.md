@@ -2,8 +2,8 @@
 
 **For AI Assistants working on this project**
 
-**Last Updated**: 2025-11-16
-**Version**: 3.0.0 - Post-Cleanup Edition
+**Last Updated**: 2025-03-30
+**Version**: 3.1.0 - Post-Review Edition
 **Purpose**: Comprehensive guide for AI assistants working with the Obsidian Auto-Linker codebase
 
 ---
@@ -122,6 +122,14 @@ Overall:              ⭐⭐⭐⭐⭐ (5/5) - EXCELLENT
 - ⏳ Test coverage at 55% (targeting 70%+)
 - ⏳ Some magic numbers in code (acceptable for now)
 - ⏳ Scripts directory needs README (planned)
+
+### 2.5 March 2025 Review Highlights
+
+- ⚠️ **Configuration validation gaps**: CLI flags (especially `--live`/`--dashboard`) can bypass schema checks—prefer loading configs through `config_utils.validate_and_resolve_config` and tighten validation before new releases.
+- ⚠️ **Ollama timeout handling**: Long-running generations can exceed defaults; adjust `ollama_timeout_seconds` in configs or propagate per-call overrides to prevent stuck runs.
+- ⚠️ **Incomplete default coverage**: Some config keys (e.g., cache/dry-run toggles) rely on implicit defaults—keep `config_schema.py` and sample YAML files aligned.
+- ⚠️ **Test setup guidance drift**: Several docs still reference deprecated setup scripts; follow `TESTING_GUIDE.md` and `requirements-test.txt` for current workflows until docs are refreshed.
+- 📄 Full details: see `CODE_REVIEW_2025-03-30.md` for actionable recommendations and context from the latest audit.
 
 ---
 
