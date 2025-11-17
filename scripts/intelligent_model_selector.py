@@ -50,7 +50,7 @@ class IntelligentModelSelector:
         
         # File size factor
         if word_count > self.word_threshold:
-            complexity_score += 3
+            complexity_score += 5
         elif word_count > 500:
             complexity_score += 2
         else:

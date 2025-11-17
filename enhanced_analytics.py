@@ -340,7 +340,9 @@ def generate_comprehensive_report(analytics: Dict[str, Any]) -> str:
             <div class="subtitle">Detailed Performance Analysis & Insights</div>
             <div class="timestamp">Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
         </div>
-        
+
+        <h2 style="color: #fff; margin-bottom: 10px;">Processing Summary</h2>
+
         <div class="metrics-grid">
             <div class="metric-card">
                 <h3>📁 Total Files</h3>
@@ -461,7 +463,7 @@ def generate_comprehensive_report(analytics: Dict[str, Any]) -> str:
     if processing_time > 300:  # More than 5 minutes
         recommendations.append(("🐌 Performance", "Processing took longer than expected. Consider using faster model or reducing batch size."))
     
-    if moc_dist.get('Life & Misc', 0) / total_files > 0.5:
+    if total_files > 0 and (moc_dist.get('Life & Misc', 0) / total_files) > 0.5:
         recommendations.append(("🏷️ Categorization", "High percentage of 'Life & Misc' files. Consider refining MOC categories or improving AI prompts."))
     
     if files_per_minute < 10:
