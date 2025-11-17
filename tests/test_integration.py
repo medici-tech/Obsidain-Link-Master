@@ -200,6 +200,7 @@ class TestMainProcessorIntegration:
         assert hasattr(processor, 'call_ollama')
         assert hasattr(processor, 'process_conversation')
         assert hasattr(processor, 'analyze_with_balanced_ai')
+"""
 Integration tests for end-to-end workflows
 Tests complete processing pipelines
 """
