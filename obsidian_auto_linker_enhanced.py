@@ -14,6 +14,7 @@ import shutil
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -61,7 +62,7 @@ MAX_RETRIES = config.get('max_retries', 3)
 PARALLEL_PROCESSING_ENABLED = config.get('parallel_processing_enabled', False)
 PARALLEL_WORKERS = config.get('parallel_workers', 1)
 
-# Warn if parallel processing is configured but not implemented
+# Parallel processing configuration
 if not PARALLEL_PROCESSING_ENABLED:
     if PARALLEL_WORKERS > 1:
         logger.info(
@@ -69,13 +70,11 @@ if not PARALLEL_PROCESSING_ENABLED:
             PARALLEL_WORKERS,
         )
     PARALLEL_WORKERS = 1
-elif PARALLEL_WORKERS > 1:
-    logger.warning(
-        "Parallel processing enabled with parallel_workers=%s, but the feature is not implemented yet. Running sequentially.",
-        PARALLEL_WORKERS,
-    )
-    logger.warning("Processing will run sequentially. See PHASE_2_3_STATUS.md for implementation status")
-    PARALLEL_WORKERS = 1
+else:
+    if PARALLEL_WORKERS > 1:
+        logger.info("✅ Parallel processing enabled: using %s workers", PARALLEL_WORKERS)
+    else:
+        logger.info("Parallel processing enabled but configured for a single worker")
 
 FILE_ORDERING = config.get('file_ordering', 'recent')
 RESUME_ENABLED = config.get('resume_enabled', True)
@@ -1663,57 +1662,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         print(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
         logger.info(f"   Backups stored in: {BACKUP_FOLDER}\n")
 
-    # Process files one at a time
-    logger.info("📝 Processing files one at a time...\n")
-
-    analytics['total_files'] = len(all_files)
-
-    for i, file_path in enumerate(all_files, 1):
-        current_file = os.path.basename(file_path)
-    
-    # Process files (sequential or parallel based on PARALLEL_WORKERS)
-    if PARALLEL_WORKERS > 1:
-        logger.info(f"📝 Processing files with {PARALLEL_WORKERS} parallel workers...\n")
-    else:
-        logger.info("📝 Processing files sequentially...\n")
-
-    analytics['total_files'] = len(all_files)
-
-    # Choose processing mode based on workers
-    if PARALLEL_WORKERS > 1:
-        # PARALLEL PROCESSING MODE
-        logger.info(f"⚡ Parallel mode: Processing up to {PARALLEL_WORKERS} files simultaneously")
-
-        with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
-            # Submit all files for processing
-            future_to_file = {}
-            for i, file_path in enumerate(all_files, 1):
-                # Check dry run limit before submitting
-                if DRY_RUN and i > DRY_RUN_LIMIT:
-                    break
-
-                future = executor.submit(
-                    process_file_wrapper,
-                    file_path,
-                    existing_notes,
-                    stats,
-                    hash_tracker,
-                    i,
-                    len(all_files),
-                    start_time
-                )
-                future_to_file[future] = (file_path, i)
-
-            # Process completed futures as they finish
-            processed_count = 0
-            for future in as_completed(future_to_file):
-                file_path, file_num = future_to_file[future]
-                current_file = os.path.basename(file_path)
-
-        logger.warning(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
-        logger.info(f"   Backups stored in: {BACKUP_FOLDER}\n")
-
-    # Process files (parallel or sequential based on config)
+    # Decide processing mode
     if PARALLEL_WORKERS > 1:
         logger.info(f"🚀 Processing files in parallel ({PARALLEL_WORKERS} workers)...\n")
     else:
@@ -1732,70 +1681,63 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         )
 
     if PARALLEL_WORKERS > 1:
-        # Parallel processing with ThreadPoolExecutor
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        processed_count = 0
+        last_file_name = ""
 
-        def process_file_wrapper(args):
-            """Wrapper for parallel processing"""
-            file_path, file_index, total = args
-            current_file = os.path.basename(file_path)
+        with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
+            future_to_meta = {}
+            for i, file_path in enumerate(all_files, 1):
+                if DRY_RUN and i > DRY_RUN_LIMIT:
+                    logger.info(f"🛑 DRY RUN LIMIT REACHED ({DRY_RUN_LIMIT} files) - stopping submission")
+                    break
 
-        print(f"\n📄 Processing file {i}/{len(all_files)}: {current_file}")
+                future = executor.submit(
+                    process_file_wrapper,
+                    file_path,
+                    existing_notes,
+                    stats,
+                    hash_tracker,
+                    i,
+                    len(all_files),
+                    start_time
+                )
+                future_to_meta[future] = (file_path, i)
 
-        # Check dry run limit
-        if DRY_RUN and i > DRY_RUN_LIMIT:
-            print(f"\n🛑 DRY RUN LIMIT REACHED ({DRY_RUN_LIMIT} files)")
-            logger.info("=" * 60)
-            print("📊 DRY RUN SUMMARY")
-            logger.info("=" * 60)
-            logger.info(f"✅ Files analyzed: {i-1}")
-            logger.info(f"📊 Would process: {stats['would_process']}")
-            print(f"⏭️  Already processed: {stats['already_processed']}")
-            logger.error(f"❌ Failed: {stats['failed']}")
-            logger.warning(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)}")
-            logger.info(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files")
-            logger.info(f"⏱️  Time elapsed: {datetime.now() - start_time}")
-
-            if DRY_RUN_INTERACTIVE:
-                print(f"\n🎛️  What would you like to do next?")
-                print("1. 🚀 Start REAL processing (modify files)")
-                print("2. 🔍 Continue dry run (analyze more files)")
-                print("3. 📊 Generate analytics report and exit")
-                print("4. ❌ Stop processing")
+            for future in as_completed(future_to_meta):
+                file_path, file_num = future_to_meta[future]
+                current_file = os.path.basename(file_path)
+                last_file_name = current_file
 
                 try:
-                    choice = input("\nChoose option (1-4): ").strip()
-
-                    if choice == "1":
-                        print("⚠️  SWITCHING TO REAL PROCESSING")
-                        logger.info("   This will modify your files!")
-                        confirm = input("Are you sure? Type 'YES' to continue: ")
-                        if confirm == "YES":
-                            DRY_RUN = False
-                            print("✅ Real processing enabled - continuing with remaining files...")
-                        else:
-                            print("❌ Real processing cancelled")
-                    file_path_result, success, skip_reason = future.result()
-
-                    if success:
+                    _, success, skip_reason = future.result()
+                    if success and skip_reason != 'unchanged':
                         processed_count += 1
-
-                    # Save progress after each file
-                    save_progress()
-                    with cache_lock:
-                        save_cache()
-
-                    # Show file summary
-                    print(f"\n📊 File {file_num} complete:")
-                    logger.info(f"   ✅ Processed: {stats['processed']}")
-                    logger.info(f"   ⏭️  Skipped: {stats['already_processed']}")
-                    logger.info(f"   ❌ Failed: {stats['failed']}")
-                    logger.info(f"   🔗 Links added: {stats.get('links_added', 0)}")
-                    logger.info(f"   🏷️  Tags added: {stats.get('tags_added', 0)}")
-
                 except Exception as e:
                     logger.error(f"❌ Error processing {current_file}: {e}")
-                    stats['failed'] += 1
+                    with progress_lock:
+                        stats['failed'] += 1
+                    continue
+
+                save_progress()
+                with cache_lock:
+                    save_cache()
+                save_incremental_tracker()
+
+                logger.info(f"\n📊 File {file_num} complete:")
+                logger.info(f"   ✅ Processed: {stats['processed']}")
+                logger.info(f"   ⏭️  Skipped: {stats['already_processed']}")
+                logger.info(f"   ❌ Failed: {stats['failed']}")
+                logger.info(f"   🔗 Links added: {stats['links_added']}")
+                logger.info(f"   🏷️  Tags added: {stats['tags_added']}")
+
+        if dashboard:
+            dashboard.update_processing(
+                total_files=len(all_files),
+                processed_files=processed_count,
+                failed_files=stats['failed'],
+                current_file=last_file_name or "Complete",
+                current_stage="Completed",
+            )
 
     else:
         # SEQUENTIAL PROCESSING MODE
