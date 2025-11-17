@@ -113,6 +113,7 @@ def sample_config() -> Dict[str, Any]:
         "max_siblings": 5,
         "batch_size": 1,
         "max_retries": 3,
+        "parallel_processing_enabled": False,
         "parallel_workers": 1,
         "file_ordering": "recent",
         "resume_enabled": True,

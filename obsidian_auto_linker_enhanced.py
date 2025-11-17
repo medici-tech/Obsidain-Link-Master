@@ -58,13 +58,24 @@ MAX_BACKUPS = config.get('max_backups', 5)
 MAX_SIBLINGS = config.get('max_siblings', 5)
 BATCH_SIZE = config.get('batch_size', 1)
 MAX_RETRIES = config.get('max_retries', 3)
+PARALLEL_PROCESSING_ENABLED = config.get('parallel_processing_enabled', False)
 PARALLEL_WORKERS = config.get('parallel_workers', 1)
 
 # Warn if parallel processing is configured but not implemented
-if PARALLEL_WORKERS > 1:
-    logger.warning(f"parallel_workers={PARALLEL_WORKERS} configured, but parallel processing not yet implemented")
+if not PARALLEL_PROCESSING_ENABLED:
+    if PARALLEL_WORKERS > 1:
+        logger.info(
+            "parallel_processing_enabled is False; ignoring parallel_workers=%s and running sequentially",
+            PARALLEL_WORKERS,
+        )
+    PARALLEL_WORKERS = 1
+elif PARALLEL_WORKERS > 1:
+    logger.warning(
+        "Parallel processing enabled with parallel_workers=%s, but the feature is not implemented yet. Running sequentially.",
+        PARALLEL_WORKERS,
+    )
     logger.warning("Processing will run sequentially. See PHASE_2_3_STATUS.md for implementation status")
-    PARALLEL_WORKERS = 1  # Force sequential processing
+    PARALLEL_WORKERS = 1
 
 FILE_ORDERING = config.get('file_ordering', 'recent')
 RESUME_ENABLED = config.get('resume_enabled', True)

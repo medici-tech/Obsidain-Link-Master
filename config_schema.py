@@ -104,6 +104,9 @@ class ObsidianConfig(BaseModel):
     folder_blacklist: List[str] = Field(default_factory=lambda: ["_backups", ".git", "Templates"])
 
     # Advanced
+    parallel_processing_enabled: bool = Field(
+        default=False, description="Enable experimental parallel processing"
+    )
     parallel_workers: int = Field(default=1, ge=1, le=16)
     max_retries: int = Field(default=1, ge=0, le=5)
 
