@@ -63,18 +63,15 @@ PARALLEL_PROCESSING_ENABLED = config.get('parallel_processing_enabled', False)
 PARALLEL_WORKERS = config.get('parallel_workers', 1)
 REQUESTED_PARALLEL_WORKERS = PARALLEL_WORKERS
 
-# Parallel processing configuration (keep an "effective" worker count so we can report it later)
-PARALLEL_MODE_ACTIVE = PARALLEL_PROCESSING_ENABLED and PARALLEL_WORKERS > 1
-if not PARALLEL_MODE_ACTIVE:
-    if PARALLEL_WORKERS > 1 and not PARALLEL_PROCESSING_ENABLED:
+# Parallel processing configuration
+if not PARALLEL_PROCESSING_ENABLED:
+    if PARALLEL_WORKERS > 1:
         logger.info(
             "parallel_processing_enabled is False; ignoring parallel_workers=%s and running sequentially",
             PARALLEL_WORKERS,
         )
     PARALLEL_WORKERS = 1
-    PARALLEL_EFFECTIVE_WORKERS = 1
 else:
-    PARALLEL_EFFECTIVE_WORKERS = PARALLEL_WORKERS
     if PARALLEL_WORKERS > 1:
         logger.info("✅ Parallel processing enabled: using %s workers", PARALLEL_WORKERS)
     else:
@@ -1667,13 +1664,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         logger.info(f"   Backups stored in: {BACKUP_FOLDER}\n")
 
     # Decide processing mode
-    logger.info(
-        "🧵 Parallel mode: %s (requested=%s, effective=%s, enabled_flag=%s)",
-        "ON" if PARALLEL_MODE_ACTIVE else "OFF",
-        REQUESTED_PARALLEL_WORKERS,
-        PARALLEL_EFFECTIVE_WORKERS,
-        PARALLEL_PROCESSING_ENABLED,
-    )
     if PARALLEL_WORKERS > 1:
         logger.info(f"🚀 Processing files in parallel ({PARALLEL_WORKERS} workers)...\n")
     else:
@@ -1694,7 +1684,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     if PARALLEL_WORKERS > 1:
         processed_count = 0
         last_file_name = ""
-        parallel_thread_names = set()
 
         with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
             future_to_meta = {}
@@ -1721,9 +1710,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 last_file_name = current_file
 
                 try:
-                    _, success, skip_reason, thread_name = future.result()
-                    if thread_name:
-                        parallel_thread_names.add(thread_name)
+                    _, success, skip_reason = future.result()
                     if success and skip_reason != 'unchanged':
                         processed_count += 1
                 except Exception as e:
@@ -1743,17 +1730,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 logger.info(f"   ❌ Failed: {stats['failed']}")
                 logger.info(f"   🔗 Links added: {stats['links_added']}")
                 logger.info(f"   🏷️  Tags added: {stats['tags_added']}")
-
-        if PARALLEL_MODE_ACTIVE:
-            logger.info(
-                "🧪 Parallel diagnostics: used %s unique threads (requested workers: %s)",
-                len(parallel_thread_names) or 1,
-                REQUESTED_PARALLEL_WORKERS,
-            )
-            logger.info(
-                "   Threads observed: %s",
-                ", ".join(sorted(parallel_thread_names)) if parallel_thread_names else "MainThread",
-            )
 
         if dashboard:
             dashboard.update_processing(
