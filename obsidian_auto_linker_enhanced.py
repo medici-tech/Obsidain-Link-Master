@@ -42,7 +42,7 @@ from config_utils import (
 from live_dashboard import LiveDashboard
 from logger_config import get_logger, setup_logging
 from scripts.cache_utils import BoundedCache, IncrementalTracker
-from scripts.incremental_processing import FileHashTracker
+from scripts.incremental_processing import FileHashTracker, create_hash_tracker
 
 # Initialize logger
 logger = get_logger(__name__)
