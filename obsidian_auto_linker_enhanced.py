@@ -4,19 +4,22 @@ Enhanced Obsidian Vault Auto-Linker with Advanced Features
 Processes conversations and creates MOC-based wiki structure
 """
 
+# Standard library imports
+import fnmatch
+import hashlib
+import json
 import os
 import re
-import sys
-import yaml  # pyright: ignore[reportMissingModuleSource]
-import json
 import shutil
-import hashlib
-import time
+import sys
 import threading
-from typing import List, Dict, Optional, Any
+import time
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
+# Third-party imports
 import requests
-import fnmatch
+import yaml  # pyright: ignore[reportMissingModuleSource]
 
 # Try to import anthropic for Claude API support (optional)
 try:
@@ -26,31 +29,20 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     Anthropic = None
 
-# Import utilities from scripts directory
-from scripts.cache_utils import BoundedCache, IncrementalTracker
-from scripts.incremental_processing import FileHashTracker
-
-# Load config
-try:
-    with open('config.yaml', 'r') as f:
-        config = yaml.safe_load(f)
-    if config is None:
-        config = {}
-except Exception as e:
-    print(f"Error loading config: {e}")
-    config = {}
-# Import logging and dashboard
-from logger_config import get_logger, setup_logging
-from live_dashboard import LiveDashboard
+# Local application imports
 from config_utils import (
-    load_yaml_config,
     check_ollama_connection,
+    get_file_size_category,
+    get_file_size_kb,
     load_json_file,
+    load_yaml_config,
     save_json_file,
     validate_vault_path,
-    get_file_size_kb,
-    get_file_size_category
 )
+from live_dashboard import LiveDashboard
+from logger_config import get_logger, setup_logging
+from scripts.cache_utils import BoundedCache, IncrementalTracker
+from scripts.incremental_processing import FileHashTracker
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -181,8 +173,6 @@ def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None, t
             response.raise_for_status()
 
             result = response.json()
-            return result.get('response', '').strip()
-
             response_text = result.get('response', '').strip()
 
             # Track metrics
@@ -1312,9 +1302,6 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
         return (file_path, False, f'error: {e}')
 
 
-def main():
-        logger.info(f"📊 Analytics report saved to: analytics_report.html")
-
 def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
     """Enhanced main processing function"""
     global dashboard
@@ -1347,10 +1334,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     load_progress()
     load_cache()
 
-    # Load progress, cache, and incremental tracker
-    load_progress()
-    load_cache()
-
     # Initialize incremental processing tracker
     hash_tracker = None
     if INCREMENTAL_PROCESSING:
@@ -1359,7 +1342,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         print(f"   Tracking {len(hash_tracker)} files from previous runs")
         if FORCE_REPROCESS:
             print(f"   ⚠️  Force reprocess enabled - will process all files")
-    load_incremental_tracker()
 
     # Initialize stats
     stats = {
