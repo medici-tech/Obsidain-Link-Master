@@ -61,6 +61,7 @@ BATCH_SIZE = config.get('batch_size', 1)
 MAX_RETRIES = config.get('max_retries', 3)
 PARALLEL_PROCESSING_ENABLED = config.get('parallel_processing_enabled', False)
 PARALLEL_WORKERS = config.get('parallel_workers', 1)
+REQUESTED_PARALLEL_WORKERS = PARALLEL_WORKERS
 
 # Parallel processing configuration
 if not PARALLEL_PROCESSING_ENABLED:
@@ -1295,7 +1296,7 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
         start_time: Processing start time
 
     Returns:
-        Tuple of (file_path, success, skip_reason)
+        Tuple of (file_path, success, skip_reason, thread_name)
     """
     current_file = os.path.basename(file_path)
 
@@ -1308,7 +1309,7 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
                     with progress_lock:
                         stats['already_processed'] += 1
                     set_file_stage(file_path, 'completed')  # Mark as completed (unchanged)
-                    return (file_path, True, 'unchanged')
+                    return (file_path, True, 'unchanged', threading.current_thread().name)
 
         # Set stage: analyzing
         set_file_stage(file_path, 'analyzing')
@@ -1329,18 +1330,18 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
         if file_processed:
             set_file_stage(file_path, 'completed')
             show_progress(current_file, "Completed", file_num, total_files, start_time)
-            return (file_path, True, None)
+            return (file_path, True, None, threading.current_thread().name)
         else:
             set_file_stage(file_path, 'completed')  # Still mark as completed even if skipped
             show_progress(current_file, "Skipped", file_num, total_files, start_time)
-            return (file_path, False, 'skipped')
+            return (file_path, False, 'skipped', threading.current_thread().name)
 
     except Exception as e:
         logger.error(f"❌ Error processing {current_file}: {e}")
         set_file_stage(file_path, 'failed')
         with progress_lock:
             stats['failed'] += 1
-        return (file_path, False, f'error: {e}')
+        return (file_path, False, f'error: {e}', threading.current_thread().name)
 
 
 def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
@@ -1893,6 +1894,12 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info(f"❌ Failed: {stats['failed']}")
     logger.info(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)} (below {CONFIDENCE_THRESHOLD:.0%} threshold)")
     logger.info(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files flagged for manual review")
+    logger.info(
+        "🧵 Parallel mode summary: %s (requested=%s, effective=%s)",
+        "ON" if PARALLEL_MODE_ACTIVE else "OFF",
+        REQUESTED_PARALLEL_WORKERS,
+        PARALLEL_EFFECTIVE_WORKERS,
+    )
 
     # Incremental processing stats
     if INCREMENTAL_PROCESSING and hash_tracker:
