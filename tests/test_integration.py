@@ -1,11 +1,14 @@
-"""
-Basic integration tests to verify modules can be imported
-and core functionality works together
-"""
+"""Integration smoke tests for the most critical modules."""
+
+import json
+import os
+import shutil
+import sys
+from unittest.mock import Mock, patch
 
 import pytest
-import sys
-import os
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class TestModuleImports:
@@ -333,23 +336,29 @@ class TestEndToEndWorkflow:
 
     def test_cache_persistence_across_runs(self, temp_vault, sample_cache):
         """Test that cache persists across multiple runs"""
-        from obsidian_auto_linker_enhanced import save_cache, load_cache
+        from obsidian_auto_linker_enhanced import load_cache, save_cache
+        from scripts.cache_utils import BoundedCache
 
         cache_file = os.path.join(temp_vault, '.ai_cache.json')
 
-        # First run - save cache
-        with patch('obsidian_auto_linker_enhanced.ai_cache', sample_cache):
+        primed_cache = BoundedCache(max_size_mb=5, max_entries=20)
+        primed_cache.from_dict(sample_cache)
+
+        # First run - save cache to disk using a bounded cache implementation
+        with patch('obsidian_auto_linker_enhanced.ai_cache', primed_cache):
             with patch('obsidian_auto_linker_enhanced.config', {'cache_file': cache_file, 'cache_enabled': True}):
                 save_cache()
 
-        # Second run - load cache
-        with patch('obsidian_auto_linker_enhanced.ai_cache', {}):
+        fresh_cache = BoundedCache(max_size_mb=5, max_entries=20)
+
+        # Second run - load cache back into a new bounded cache instance
+        with patch('obsidian_auto_linker_enhanced.ai_cache', fresh_cache):
             with patch('obsidian_auto_linker_enhanced.config', {'cache_file': cache_file, 'cache_enabled': True}):
-                from obsidian_auto_linker_enhanced import ai_cache
                 load_cache()
 
-                # Verify cache was loaded
-                assert len(ai_cache) > 0 or os.path.exists(cache_file)
+                stats = fresh_cache.get_stats()
+                assert stats['entries'] > 0
+                assert os.path.exists(cache_file)
 
     def test_batch_processing_workflow(self, mock_file_system, mock_ollama_success):
         """Test batch processing of multiple files"""
