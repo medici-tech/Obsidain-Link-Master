@@ -115,20 +115,20 @@ CLAUDE_TIMEOUT = config.get('claude_timeout', 60)
 claude_client = None
 if AI_PROVIDER == 'claude':
     if not ANTHROPIC_AVAILABLE:
-        print("⚠️  WARNING: anthropic package not installed. Install with: pip install anthropic")
-        print("⚠️  Falling back to Ollama provider")
+        logger.warning("⚠️  WARNING: anthropic package not installed. Install with: pip install anthropic")
+        logger.warning("⚠️  Falling back to Ollama provider")
         AI_PROVIDER = 'ollama'
     elif not CLAUDE_API_KEY:
-        print("⚠️  WARNING: Claude API key not found in config or ANTHROPIC_API_KEY env var")
-        print("⚠️  Falling back to Ollama provider")
+        logger.warning("⚠️  WARNING: Claude API key not found in config or ANTHROPIC_API_KEY env var")
+        logger.warning("⚠️  Falling back to Ollama provider")
         AI_PROVIDER = 'ollama'
     else:
         try:
             claude_client = Anthropic(api_key=CLAUDE_API_KEY)
-            print(f"✅ Claude API initialized (model: {CLAUDE_MODEL})")
+            logger.info(f"✅ Claude API initialized (model: {CLAUDE_MODEL})")
         except Exception as e:
-            print(f"⚠️  WARNING: Failed to initialize Claude API: {e}")
-            print("⚠️  Falling back to Ollama provider")
+            logger.warning(f"⚠️  WARNING: Failed to initialize Claude API: {e}")
+            logger.warning("⚠️  Falling back to Ollama provider")
             AI_PROVIDER = 'ollama'
 
 # Cost tracking disabled for local LLM (free to use)
@@ -192,8 +192,7 @@ def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None, t
 
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                logger.warning(f"⏰ Attempt {attempt + 1} timed out ({timeout}s). Local models are slow - retrying in {wait_time}s...")
-                print(f"⏰ Attempt {attempt + 1} timed out ({timeout}s). Qwen3:8b needs time for complex reasoning - retrying in {wait_time}s...")
+                logger.warning(f"⏰ Attempt {attempt + 1} timed out ({timeout}s). Qwen3:8b needs time for complex reasoning - retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 continue
             else:
@@ -408,13 +407,13 @@ def load_progress() -> None:
                     progress_data['failed_files'] = set(data.get('failed_files', []))
                     progress_data['current_batch'] = data.get('current_batch', 0)
                     progress_data['file_stages'] = data.get('file_stages', {})
-                    print(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
+                    logger.info(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
                     if progress_data['file_stages']:
                         stages_summary = {}
                         for filepath, stage_data in progress_data['file_stages'].items():
                             stage = stage_data.get('stage', 'unknown')
                             stages_summary[stage] = stages_summary.get(stage, 0) + 1
-                        print(f"   📋 File stages: {dict(stages_summary)}")
+                        logger.info(f"   📋 File stages: {dict(stages_summary)}")
                 else:
                     progress_data['processed_files'] = set()
                     progress_data['failed_files'] = set()
@@ -424,7 +423,7 @@ def load_progress() -> None:
             progress_data['failed_files'] = set()
             progress_data['current_batch'] = 0
         except Exception as e:
-            print(f"⚠️  Could not load progress file: {e}")
+            logger.warning(f"⚠️  Could not load progress file: {e}")
     data = load_json_file(progress_file, default={})
 
     if data and isinstance(data, dict):
@@ -454,7 +453,7 @@ def save_progress() -> None:
                 'last_update': datetime.now().isoformat()
             }, f, indent=2)
     except Exception as e:
-        print(f"⚠️  Could not save progress: {e}")
+        logger.warning(f"⚠️  Could not save progress: {e}")
 
 
 def set_file_stage(filepath: str, stage: str):
@@ -770,8 +769,8 @@ Return ONLY the JSON object, no explanations or other text."""
         try:
             result = json.loads(result_text)
         except json.JSONDecodeError as e:
-            print(f"  ⚠️  JSON parse error: {e}")
-            print(f"  Response was: {result_text[:200]}")
+            logger.info(f"  ⚠️  JSON parse error: {e}")
+            logger.info(f"  Response was: {result_text[:200]}")
             logger.warning(f"  ⚠️  JSON parse error: {e}")
             logger.debug(f"  Response was: {result_text[:200]}")
 
@@ -882,9 +881,9 @@ Once you've reviewed and corrected the analysis, you can:
     try:
         with open(review_path, 'w', encoding='utf-8') as f:
             f.write(review_content)
-        print(f"  📝 Review file created: {review_filename}")
+        logger.info(f"  📝 Review file created: {review_filename}")
     except Exception as e:
-        print(f"  ❌ Failed to create review file: {e}")
+        logger.info(f"  ❌ Failed to create review file: {e}")
 
 def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: Dict) -> bool:
     """Process single conversation file with enhanced error handling"""
@@ -960,20 +959,20 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     logger.info(f"  ✓ MOC: {ai_result.get('moc_category')}")
     logger.info(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
 
-    print(f"  ✓ Confidence: {confidence:.0%}")
-    print(f"  ✓ MOC: {ai_result.get('moc_category')}")
-    print(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
+    logger.info(f"  ✓ Confidence: {confidence:.0%}")
+    logger.info(f"  ✓ MOC: {ai_result.get('moc_category')}")
+    logger.info(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
 
     # Check confidence threshold
     if confidence < CONFIDENCE_THRESHOLD:
-        print(f"  ⚠️  LOW CONFIDENCE: {confidence:.0%} < {CONFIDENCE_THRESHOLD:.0%} threshold")
-        print(f"  📋 Flagging for manual review...")
+        logger.info(f"  ⚠️  LOW CONFIDENCE: {confidence:.0%} < {CONFIDENCE_THRESHOLD:.0%} threshold")
+        logger.info(f"  📋 Flagging for manual review...")
 
         # Add to review queue
         if ENABLE_REVIEW_QUEUE:
             add_to_review_queue(file_path, ai_result, confidence)
             analytics['review_queue_count'] = analytics.get('review_queue_count', 0) + 1
-            print(f"  📝 Added to review queue: {REVIEW_QUEUE_PATH}")
+            logger.info(f"  📝 Added to review queue: {REVIEW_QUEUE_PATH}")
 
         # Track low confidence files
         analytics['low_confidence_files'] = analytics.get('low_confidence_files', 0) + 1
@@ -1040,8 +1039,8 @@ Children: None yet"""
 """
 
     # Show results
-    print(f"  🏷️  Tags: {len(hierarchical_tags)}")
-    print(f"  🔗 Siblings: {len(verified_siblings)}")
+    logger.info(f"  🏷️  Tags: {len(hierarchical_tags)}")
+    logger.info(f"  🔗 Siblings: {len(verified_siblings)}")
     logger.info(f"  🏷️  Tags: {len(hierarchical_tags)}")
     logger.info(f"  🔗 Siblings: {len(verified_siblings)}")
 
@@ -1064,8 +1063,8 @@ Children: None yet"""
             stats['tags_added'] += len(hierarchical_tags)
             progress_data['processed_files'].add(file_path)
 
-            print(f"  📄 Created new file: {os.path.basename(new_file_path)}")
-            print("  ✅ File updated")
+            logger.info(f"  📄 Created new file: {os.path.basename(new_file_path)}")
+            logger.info("  ✅ File updated")
             with progress_lock:
                 progress_data['processed_files'].add(file_path)
 
@@ -1084,7 +1083,7 @@ Children: None yet"""
             return False
     else:
         stats['would_process'] += 1
-        print("  🔥 DRY RUN - No changes made")
+        logger.info("  🔥 DRY RUN - No changes made")
         logger.info("  🔥 DRY RUN - No changes made")
 
     # Track file processing time
@@ -1237,7 +1236,7 @@ def generate_analytics_report() -> None:
         with open('analytics_report.html', 'w') as f:
             f.write(html_report)
 
-        print(f"📊 Analytics report saved to: analytics_report.html")
+        logger.info(f"📊 Analytics report saved to: analytics_report.html")
 
 def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_num, total_files, start_time):
     """
@@ -1263,7 +1262,7 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
         if INCREMENTAL_PROCESSING and hash_tracker and not FORCE_REPROCESS:
             with hash_tracker_lock:
                 if not hash_tracker.has_changed(file_path):
-                    print(f"  ⏭️  {current_file}: Skipping (unchanged)")
+                    logger.info(f"  ⏭️  {current_file}: Skipping (unchanged)")
                     with progress_lock:
                         stats['already_processed'] += 1
                     set_file_stage(file_path, 'completed')  # Mark as completed (unchanged)
@@ -1295,7 +1294,7 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
             return (file_path, False, 'skipped')
 
     except Exception as e:
-        print(f"❌ Error processing {current_file}: {e}")
+        logger.error(f"❌ Error processing {current_file}: {e}")
         set_file_stage(file_path, 'failed')
         with progress_lock:
             stats['failed'] += 1
@@ -1316,8 +1315,8 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     # Declare global variables for interactive mode
     global DRY_RUN, BATCH_SIZE, OLLAMA_MODEL, FILE_ORDERING
 
-    print("=" * 60)
-    print("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
+    logger.info("=" * 60)
+    logger.info("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
     if FAST_DRY_RUN:
         logger.info("   ⚡ FAST DRY RUN MODE - No AI Analysis")
     elif DRY_RUN:
@@ -1338,10 +1337,10 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     hash_tracker = None
     if INCREMENTAL_PROCESSING:
         hash_tracker = create_hash_tracker(config)
-        print(f"📝 Incremental processing enabled")
-        print(f"   Tracking {len(hash_tracker)} files from previous runs")
+        logger.info(f"📝 Incremental processing enabled")
+        logger.info(f"   Tracking {len(hash_tracker)} files from previous runs")
         if FORCE_REPROCESS:
-            print(f"   ⚠️  Force reprocess enabled - will process all files")
+            logger.info(f"   ⚠️  Force reprocess enabled - will process all files")
 
     # Initialize stats
     stats = {
@@ -1358,8 +1357,8 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     processed_count = 0
 
     # Test Ollama connection first
-    print("🔍 Testing Ollama connection...")
-    print("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
+    logger.info("🔍 Testing Ollama connection...")
+    logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
     test_response = call_ollama("Hello", "You are a helpful assistant.")
     
     # Test AI provider connection first
@@ -1377,40 +1376,40 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             logger.info(f"   Then: ollama pull {OLLAMA_MODEL}")
         return
     else:
-        print("✅ Ollama connection successful")
-        print("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
-        print(f"   🤖 Using model: {OLLAMA_MODEL}")
-        print(f"   ⏱️  Base timeout: {OLLAMA_TIMEOUT}s (extended for complex reasoning)")
-        print(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
-        print(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
-        print(f"   🧠 Extended timeouts prevent reasoning interruptions")
+        logger.info("✅ Ollama connection successful")
+        logger.info("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
+        logger.info(f"   🤖 Using model: {OLLAMA_MODEL}")
+        logger.info(f"   ⏱️  Base timeout: {OLLAMA_TIMEOUT}s (extended for complex reasoning)")
+        logger.info(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
+        logger.info(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
+        logger.info(f"   🧠 Extended timeouts prevent reasoning interruptions")
 
         if AI_PROVIDER == 'claude':
             logger.info(f"✅ Claude API connection successful")
             logger.info(f"   🤖 Using model: {CLAUDE_MODEL}")
             logger.info(f"   ⚡ Claude is fast (5-10 seconds per file)")
-            print(f"✅ Claude API connection successful")
-            print(f"   🤖 Using model: {CLAUDE_MODEL}")
-            print(f"   ⚡ Claude is fast (5-10 seconds per file)")
-            print(f"   ⏱️  Timeout: {CLAUDE_TIMEOUT}s")
-            print(f"   📝 Max tokens: {CLAUDE_MAX_TOKENS}")
+            logger.info(f"✅ Claude API connection successful")
+            logger.info(f"   🤖 Using model: {CLAUDE_MODEL}")
+            logger.info(f"   ⚡ Claude is fast (5-10 seconds per file)")
+            logger.info(f"   ⏱️  Timeout: {CLAUDE_TIMEOUT}s")
+            logger.info(f"   📝 Max tokens: {CLAUDE_MAX_TOKENS}")
         else:
             logger.info("✅ Ollama connection successful")
             logger.info("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
             logger.info(f"   🤖 Using model: {OLLAMA_MODEL}")
-            print("✅ Ollama connection successful")
-            print("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
-            print(f"   🤖 Using model: {OLLAMA_MODEL}")
-            print(f"   ⏱️  Base timeout: {OLLAMA_TIMEOUT}s (extended for complex reasoning)")
-            print(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
-            print(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
-            print(f"   🧠 Extended timeouts prevent reasoning interruptions")
+            logger.info("✅ Ollama connection successful")
+            logger.info("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
+            logger.info(f"   🤖 Using model: {OLLAMA_MODEL}")
+            logger.info(f"   ⏱️  Base timeout: {OLLAMA_TIMEOUT}s (extended for complex reasoning)")
+            logger.info(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
+            logger.info(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
+            logger.info(f"   🧠 Extended timeouts prevent reasoning interruptions")
     
     # Scan vault
     logger.info("🔍 Scanning vault...")
     logger.info(f"   Vault path: {VAULT_PATH}")
     existing_notes = get_all_notes(VAULT_PATH)
-    print(f"   Found {len(existing_notes)} existing notes")
+    logger.info(f"   Found {len(existing_notes)} existing notes")
     logger.info(f"   Found {len(existing_notes)} existing notes")
 
     # Create MOC notes if needed
@@ -1462,8 +1461,8 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         if skipped_unchanged > 0:
             percentage_skipped = (skipped_unchanged / total_before * 100) if total_before > 0 else 0
             logger.info(f"✅ Incremental: Skipped {skipped_unchanged}/{total_before} unchanged files ({percentage_skipped:.1f}%)")
-            print(f"   ⚡ Incremental processing: {skipped_unchanged} files unchanged, processing {len(all_files)} files")
-            print(f"   💡 This saves ~{skipped_unchanged * 2.5:.1f} minutes of processing time!")
+            logger.info(f"   ⚡ Incremental processing: {skipped_unchanged} files unchanged, processing {len(all_files)} files")
+            logger.info(f"   💡 This saves ~{skipped_unchanged * 2.5:.1f} minutes of processing time!")
 
             # Update analytics
             analytics['skipped_unchanged'] = skipped_unchanged
@@ -1476,7 +1475,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info(f"📋 Ordering files by: {FILE_ORDERING}")
     all_files = order_files(all_files, FILE_ORDERING)
 
-    print(f"   Found {len(all_files)} markdown files to process")
+    logger.info(f"   Found {len(all_files)} markdown files to process")
     logger.info(f"   Found {len(all_files)} markdown files to process")
 
     # Set total files for progress tracking
@@ -1511,7 +1510,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         try:
             print("\n" + "=" * 60)
             print("🎛️  INTERACTIVE CONFIGURATION")
-            print("=" * 60)
+            logger.info("=" * 60)
 
             # Ask for run type
             print(f"\n📊 Found {len(all_files)} files to process")
@@ -1525,11 +1524,11 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             choice = input("\nChoose option (1-5): ").strip()
 
             if choice == "1":
-                print("✅ Selected: Dry Run Mode")
+                logger.info("✅ Selected: Dry Run Mode")
                 # Keep dry_run = True
             elif choice == "2":
-                print("✅ Selected: Real Processing Mode")
-                print("⚠️  WARNING: This will modify your files!")
+                logger.info("✅ Selected: Real Processing Mode")
+                logger.warning("⚠️  WARNING: This will modify your files!")
                 confirm = input("Are you sure? Type 'YES' to continue: ")
                 if confirm != "YES":
                     print("❌ Real processing cancelled")
@@ -1544,7 +1543,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 if batch_input:
                     try:
                         BATCH_SIZE = int(batch_input)
-                        print(f"✅ Batch size set to: {BATCH_SIZE}")
+                        logger.info(f"✅ Batch size set to: {BATCH_SIZE}")
                     except ValueError:
                         print("⚠️  Invalid batch size, keeping current")
 
@@ -1554,7 +1553,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 model_input = input("Model (press Enter to keep current): ").strip()
                 if model_input in ["qwen3:8b", "qwen2.5:3b"]:
                     OLLAMA_MODEL = model_input
-                    print(f"✅ Model set to: {OLLAMA_MODEL}")
+                    logger.info(f"✅ Model set to: {OLLAMA_MODEL}")
                 elif model_input:
                     print("⚠️  Invalid model, keeping current")
 
@@ -1564,7 +1563,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 order_input = input("File ordering (press Enter to keep current): ").strip()
                 if order_input in ["recent", "oldest", "smallest", "largest", "random", "alphabetical"]:
                     FILE_ORDERING = order_input
-                    print(f"✅ File ordering set to: {FILE_ORDERING}")
+                    logger.info(f"✅ File ordering set to: {FILE_ORDERING}")
                 elif order_input:
                     print("⚠️  Invalid ordering, keeping current")
 
@@ -1582,31 +1581,31 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                     print("✅ Dry run mode confirmed")
 
             elif choice == "4":
-                print("✅ Selected: Start with Smallest Files")
+                logger.info("✅ Selected: Start with Smallest Files")
                 print("🐣 Perfect for quick testing!")
                 FILE_ORDERING = "smallest"
-                print(f"✅ File ordering set to: {FILE_ORDERING}")
+                logger.info(f"✅ File ordering set to: {FILE_ORDERING}")
             elif choice == "5":
-                print("❌ Processing cancelled by user")
+                logger.error("❌ Processing cancelled by user")
                 return
             else:
                 print("⚠️  Invalid choice, using default settings")
 
             # Final confirmation
             print(f"\n📋 Final Configuration:")
-            print(f"   🤖 Model: {OLLAMA_MODEL}")
-            print(f"   📦 Batch size: {BATCH_SIZE}")
-            print(f"   🧪 Mode: {'Dry Run' if DRY_RUN else 'Real Processing'}")
-            print(f"   📁 Files: {len(all_files)}")
+            logger.info(f"   🤖 Model: {OLLAMA_MODEL}")
+            logger.info(f"   📦 Batch size: {BATCH_SIZE}")
+            logger.info(f"   🧪 Mode: {'Dry Run' if DRY_RUN else 'Real Processing'}")
+            logger.info(f"   📁 Files: {len(all_files)}")
 
             final_confirm = input("\nProceed with these settings? (y/N): ")
             if final_confirm.lower() != 'y':
-                print("❌ Processing cancelled by user")
+                logger.error("❌ Processing cancelled by user")
                 return
 
         except EOFError:
             # Running in non-interactive mode (like from web GUI)
-            print(f"⚠️  Auto-continuing with default settings...")
+            logger.warning(f"⚠️  Auto-continuing with default settings...")
             pass
 
         # Cost tracking removed for local LLM
@@ -1615,14 +1614,14 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         logger.info("\n🔥 DRY RUN MODE - No files will be modified")
         logger.info("   Set dry_run: false in config.yaml to process for real\n")
         print("\n🔥 DRY RUN MODE - No files will be modified")
-        print(f"   📊 Limited to first {DRY_RUN_LIMIT} files for analysis")
-        print("   Set dry_run: false in config.yaml to process for real\n")
+        logger.info(f"   📊 Limited to first {DRY_RUN_LIMIT} files for analysis")
+        logger.info("   Set dry_run: false in config.yaml to process for real\n")
     else:
         print(f"\n⚠️  PROCESSING FOR REAL - Backups will be created")
-        print(f"   Backups stored in: {BACKUP_FOLDER}\n")
+        logger.info(f"   Backups stored in: {BACKUP_FOLDER}\n")
 
     # Process files one at a time
-    print("📝 Processing files one at a time...\n")
+    logger.info("📝 Processing files one at a time...\n")
 
     analytics['total_files'] = len(all_files)
 
@@ -1631,16 +1630,16 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     
     # Process files (sequential or parallel based on PARALLEL_WORKERS)
     if PARALLEL_WORKERS > 1:
-        print(f"📝 Processing files with {PARALLEL_WORKERS} parallel workers...\n")
+        logger.info(f"📝 Processing files with {PARALLEL_WORKERS} parallel workers...\n")
     else:
-        print("📝 Processing files sequentially...\n")
+        logger.info("📝 Processing files sequentially...\n")
 
     analytics['total_files'] = len(all_files)
 
     # Choose processing mode based on workers
     if PARALLEL_WORKERS > 1:
         # PARALLEL PROCESSING MODE
-        print(f"⚡ Parallel mode: Processing up to {PARALLEL_WORKERS} files simultaneously")
+        logger.info(f"⚡ Parallel mode: Processing up to {PARALLEL_WORKERS} files simultaneously")
 
         with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
             # Submit all files for processing
@@ -1703,16 +1702,16 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         # Check dry run limit
         if DRY_RUN and i > DRY_RUN_LIMIT:
             print(f"\n🛑 DRY RUN LIMIT REACHED ({DRY_RUN_LIMIT} files)")
-            print("=" * 60)
+            logger.info("=" * 60)
             print("📊 DRY RUN SUMMARY")
-            print("=" * 60)
-            print(f"✅ Files analyzed: {i-1}")
-            print(f"📊 Would process: {stats['would_process']}")
+            logger.info("=" * 60)
+            logger.info(f"✅ Files analyzed: {i-1}")
+            logger.info(f"📊 Would process: {stats['would_process']}")
             print(f"⏭️  Already processed: {stats['already_processed']}")
-            print(f"❌ Failed: {stats['failed']}")
-            print(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)}")
-            print(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files")
-            print(f"⏱️  Time elapsed: {datetime.now() - start_time}")
+            logger.error(f"❌ Failed: {stats['failed']}")
+            logger.warning(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)}")
+            logger.info(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files")
+            logger.info(f"⏱️  Time elapsed: {datetime.now() - start_time}")
 
             if DRY_RUN_INTERACTIVE:
                 print(f"\n🎛️  What would you like to do next?")
@@ -1726,7 +1725,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
 
                     if choice == "1":
                         print("⚠️  SWITCHING TO REAL PROCESSING")
-                        print("   This will modify your files!")
+                        logger.info("   This will modify your files!")
                         confirm = input("Are you sure? Type 'YES' to continue: ")
                         if confirm == "YES":
                             DRY_RUN = False
@@ -1745,14 +1744,14 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
 
                     # Show file summary
                     print(f"\n📊 File {file_num} complete:")
-                    print(f"   ✅ Processed: {stats['processed']}")
-                    print(f"   ⏭️  Skipped: {stats['already_processed']}")
-                    print(f"   ❌ Failed: {stats['failed']}")
-                    print(f"   🔗 Links added: {stats.get('links_added', 0)}")
-                    print(f"   🏷️  Tags added: {stats.get('tags_added', 0)}")
+                    logger.info(f"   ✅ Processed: {stats['processed']}")
+                    logger.info(f"   ⏭️  Skipped: {stats['already_processed']}")
+                    logger.info(f"   ❌ Failed: {stats['failed']}")
+                    logger.info(f"   🔗 Links added: {stats.get('links_added', 0)}")
+                    logger.info(f"   🏷️  Tags added: {stats.get('tags_added', 0)}")
 
                 except Exception as e:
-                    print(f"❌ Error processing {current_file}: {e}")
+                    logger.error(f"❌ Error processing {current_file}: {e}")
                     stats['failed'] += 1
 
     else:
@@ -1769,13 +1768,13 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 print("=" * 60)
                 print("📊 DRY RUN SUMMARY")
                 print("=" * 60)
-                print(f"✅ Files analyzed: {i-1}")
-                print(f"📊 Would process: {stats['would_process']}")
+                logger.info(f"✅ Files analyzed: {i-1}")
+                logger.info(f"📊 Would process: {stats['would_process']}")
                 print(f"⏭️  Already processed: {stats['already_processed']}")
-                print(f"❌ Failed: {stats['failed']}")
-                print(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)}")
-                print(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files")
-                print(f"⏱️  Time elapsed: {datetime.now() - start_time}")
+                logger.error(f"❌ Failed: {stats['failed']}")
+                logger.warning(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)}")
+                logger.info(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files")
+                logger.info(f"⏱️  Time elapsed: {datetime.now() - start_time}")
 
                 if DRY_RUN_INTERACTIVE:
                     print(f"\n🎛️  What would you like to do next?")
@@ -1789,7 +1788,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
 
                         if choice == "1":
                             print("⚠️  SWITCHING TO REAL PROCESSING")
-                            print("   This will modify your files!")
+                            logger.info("   This will modify your files!")
                             confirm = input("Are you sure? Type 'YES' to continue: ")
                             if confirm == "YES":
                                 DRY_RUN = False
@@ -1817,7 +1816,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             # Check if file has changed (incremental processing)
             if INCREMENTAL_PROCESSING and hash_tracker and not FORCE_REPROCESS:
                 if not hash_tracker.has_changed(file_path):
-                    print(f"  ⏭️  Skipping (unchanged since last run)")
+                    logger.info(f"  ⏭️  Skipping (unchanged since last run)")
                     stats['already_processed'] += 1
                     set_file_stage(file_path, 'completed')  # Mark as completed (unchanged)
                     continue
@@ -1864,11 +1863,11 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
 
             # Show file summary
             print(f"\n📊 File {i} complete:")
-            print(f"   ✅ Processed: {stats['processed']}")
-            print(f"   ⏭️  Skipped: {stats['already_processed']}")
-            print(f"   ❌ Failed: {stats['failed']}")
-            print(f"   🔗 Links added: {stats['links_added']}")
-            print(f"   🏷️  Tags added: {stats['tags_added']}")
+            logger.info(f"   ✅ Processed: {stats['processed']}")
+            logger.info(f"   ⏭️  Skipped: {stats['already_processed']}")
+            logger.info(f"   ❌ Failed: {stats['failed']}")
+            logger.info(f"   🔗 Links added: {stats['links_added']}")
+            logger.info(f"   🏷️  Tags added: {stats['tags_added']}")
             save_incremental_tracker()
 
         # Update dashboard after processing
@@ -1914,10 +1913,10 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     if INCREMENTAL_PROCESSING and hash_tracker:
         inc_stats = hash_tracker.get_stats()
         print(f"\n📝 Incremental Processing:")
-        print(f"   ⏭️  Skipped (unchanged): {inc_stats['unchanged_files']} files ({inc_stats['skip_rate']}% skip rate)")
-        print(f"   🔄 Changed: {inc_stats['changed_files']} files")
-        print(f"   ✨ New: {inc_stats['new_files']} files")
-        print(f"   💾 Tracking: {inc_stats['total_tracked_files']} files total")
+        logger.info(f"   ⏭️  Skipped (unchanged): {inc_stats['unchanged_files']} files ({inc_stats['skip_rate']}% skip rate)")
+        logger.info(f"   🔄 Changed: {inc_stats['changed_files']} files")
+        logger.info(f"   ✨ New: {inc_stats['new_files']} files")
+        logger.info(f"   💾 Tracking: {inc_stats['total_tracked_files']} files total")
 
     # Cost tracking removed for local LLM
     print()
@@ -1935,13 +1934,13 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         result = subprocess.run(['python3', 'ultra_detailed_analytics.py'],
                               capture_output=True, text=True, timeout=120)
         if result.returncode == 0:
-            print("✅ Ultra detailed analytics generated!")
+            logger.info("✅ Ultra detailed analytics generated!")
             print("🌐 Ultra detailed report will open automatically in your browser")
         else:
             print("⚠️ Ultra detailed analytics failed, using standard report")
             print(f"Error: {result.stderr}")
     except Exception as e:
-        print(f"⚠️ Ultra detailed analytics failed: {e}")
+        logger.warning(f"⚠️ Ultra detailed analytics failed: {e}")
         print("📊 Using standard analytics report")
 
     if DRY_RUN:
