@@ -42,7 +42,7 @@ from config_utils import (
 from live_dashboard import LiveDashboard
 from logger_config import get_logger, setup_logging
 from scripts.cache_utils import BoundedCache, IncrementalTracker
-from scripts.incremental_processing import FileHashTracker
+from scripts.incremental_processing import FileHashTracker, create_hash_tracker
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -58,13 +58,24 @@ MAX_BACKUPS = config.get('max_backups', 5)
 MAX_SIBLINGS = config.get('max_siblings', 5)
 BATCH_SIZE = config.get('batch_size', 1)
 MAX_RETRIES = config.get('max_retries', 3)
+PARALLEL_PROCESSING_ENABLED = config.get('parallel_processing_enabled', False)
 PARALLEL_WORKERS = config.get('parallel_workers', 1)
 
 # Warn if parallel processing is configured but not implemented
-if PARALLEL_WORKERS > 1:
-    logger.warning(f"parallel_workers={PARALLEL_WORKERS} configured, but parallel processing not yet implemented")
+if not PARALLEL_PROCESSING_ENABLED:
+    if PARALLEL_WORKERS > 1:
+        logger.info(
+            "parallel_processing_enabled is False; ignoring parallel_workers=%s and running sequentially",
+            PARALLEL_WORKERS,
+        )
+    PARALLEL_WORKERS = 1
+elif PARALLEL_WORKERS > 1:
+    logger.warning(
+        "Parallel processing enabled with parallel_workers=%s, but the feature is not implemented yet. Running sequentially.",
+        PARALLEL_WORKERS,
+    )
     logger.warning("Processing will run sequentially. See PHASE_2_3_STATUS.md for implementation status")
-    PARALLEL_WORKERS = 1  # Force sequential processing
+    PARALLEL_WORKERS = 1
 
 FILE_ORDERING = config.get('file_ordering', 'recent')
 RESUME_ENABLED = config.get('resume_enabled', True)
@@ -174,6 +185,15 @@ def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None, t
 
             result = response.json()
             response_text = result.get('response', '').strip()
+
+            # Clean common markdown code fences
+            if response_text.startswith('```json'):
+                response_text = response_text[7:]
+            if response_text.startswith('```'):
+                response_text = response_text[3:]
+            if response_text.endswith('```'):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
 
             # Track metrics
             if track_metrics and dashboard:
@@ -504,13 +524,20 @@ def load_cache() -> None:
     cache_data = load_json_file(cache_file, default={})
 
     if cache_data:
-        ai_cache.from_dict(cache_data)
+        try:
+            ai_cache.from_dict(cache_data)
+        except AttributeError:
+            # Fallback for simple dict patches in tests
+            ai_cache.clear()
+            ai_cache.update(cache_data)
+
         logger.info(f"💾 Loaded cache: {len(cache_data)} cached responses")
 
-        # Update dashboard with cache stats
+        # Update dashboard with cache stats when available
         if dashboard:
-            cache_stats = ai_cache.get_stats()
-            dashboard.update_cache_stats(cache_stats['size_mb'], cache_stats['entries'])
+            if hasattr(ai_cache, 'get_stats'):
+                cache_stats = ai_cache.get_stats()
+                dashboard.update_cache_stats(cache_stats['size_mb'], cache_stats['entries'])
 
 def save_cache() -> None:
     """Save AI cache to file using BoundedCache.save_to_file()"""
@@ -520,10 +547,15 @@ def save_cache() -> None:
     cache_file = config.get('cache_file', '.ai_cache.json')
     try:
         with cache_lock:
-            ai_cache.save_to_file(cache_file)
-            stats = ai_cache.get_stats()
-            logger.info(f"💾 Saved cache: {stats['entries']} entries ({stats['size_mb']:.2f}MB)")
-            logger.info(f"   Cache stats - Utilization: {stats['utilization_pct']:.1f}%, Size: {stats['size_utilization_pct']:.1f}%")
+            if hasattr(ai_cache, 'save_to_file'):
+                ai_cache.save_to_file(cache_file)
+                stats = ai_cache.get_stats()
+                logger.info(f"💾 Saved cache: {stats['entries']} entries ({stats['size_mb']:.2f}MB)")
+                logger.info(f"   Cache stats - Utilization: {stats['utilization_pct']:.1f}%, Size: {stats['size_utilization_pct']:.1f}%")
+            else:
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    json.dump(ai_cache, f, indent=2)
+                logger.info(f"💾 Saved cache: {len(ai_cache)} entries")
     except Exception as e:
         logger.error(f"⚠️  Could not save cache: {e}")
 
@@ -748,7 +780,6 @@ Return ONLY the JSON object, no explanations or other text."""
     try:
         # Call configured AI provider (Ollama or Claude)
         system_prompt = "You analyze conversations and create knowledge connections. Return valid JSON only."
-        result_text = call_ollama(prompt, system_prompt)
         result_text = call_ai_provider(prompt, system_prompt)
 
         if not result_text:
@@ -756,6 +787,9 @@ Return ONLY the JSON object, no explanations or other text."""
             return None
 
         # Clean up potential markdown formatting
+        if not isinstance(result_text, str):
+            result_text = json.dumps(result_text)
+
         result_text = result_text.strip()
         if result_text.startswith('```json'):
             result_text = result_text[7:]
@@ -788,10 +822,19 @@ Return ONLY the JSON object, no explanations or other text."""
                 return None
 
         # Cache the result (with automatic LRU eviction if needed)
+        def _set_cache(key: str, value: Dict[str, Any]):
+            if hasattr(ai_cache, 'set'):
+                ai_cache.set(key, value)
+            else:
+                ai_cache[key] = value
+
         with cache_lock:
-            ai_cache.set(content_hash, result)
-            stats = ai_cache.get_stats()
-            logger.debug(f"💾 Cached result (cache: {stats['entries']}/{stats['max_entries']} entries, {stats['size_mb']:.1f}/{stats['max_size_mb']}MB)")
+            _set_cache(content_hash, result)
+            if hasattr(ai_cache, 'get_stats'):
+                stats = ai_cache.get_stats()
+                logger.debug(
+                    f"💾 Cached result (cache: {stats['entries']}/{stats['max_entries']} entries, {stats['size_mb']:.1f}/{stats['max_size_mb']}MB)"
+                )
 
         return result
     except Exception as e:

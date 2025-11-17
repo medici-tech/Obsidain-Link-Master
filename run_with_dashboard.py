@@ -197,6 +197,44 @@ class EnhancedRunner:
         batch_map = {'1': 1, '2': 5, '3': 10}
         batch_size = batch_map.get(batch_choice, 1)
 
+        # Parallel processing
+        console.print("\n[bold]⚡ Parallel Processing:[/bold]")
+        default_parallel_enabled = existing_config.get('parallel_processing_enabled', False)
+        parallel_prompt = "Y/n" if default_parallel_enabled else "y/N"
+        try:
+            parallel_choice = input(
+                f"   Enable parallel processing? ({parallel_prompt}, default={'on' if default_parallel_enabled else 'off'}): "
+            ).strip().lower()
+        except EOFError:
+            parallel_choice = 'y' if default_parallel_enabled else 'n'
+
+        parallel_processing_enabled = (
+            parallel_choice in ['y', 'yes']
+            if parallel_choice
+            else default_parallel_enabled
+        )
+
+        default_workers = existing_config.get('parallel_workers', 1)
+        parallel_workers = default_workers
+
+        if parallel_processing_enabled:
+            try:
+                workers_input = input(
+                    f"   Parallel workers (1-16, default={default_workers}): "
+                ).strip()
+            except EOFError:
+                workers_input = ""
+
+            if workers_input:
+                try:
+                    parsed_workers = int(workers_input)
+                    if 1 <= parsed_workers <= 16:
+                        parallel_workers = parsed_workers
+                    else:
+                        console.print("[yellow]Using default worker count (must be 1-16).[/yellow]")
+                except ValueError:
+                    console.print("[yellow]Invalid number, using default worker count.[/yellow]")
+
         # Save configuration
         self.config = {
             'vault_path': vault_path,
@@ -204,6 +242,8 @@ class EnhancedRunner:
             'dry_run': dry_run,
             'fast_dry_run': fast_dry_run,
             'batch_size': batch_size,
+            'parallel_processing_enabled': parallel_processing_enabled,
+            'parallel_workers': parallel_workers,
             'ollama_base_url': existing_config.get('ollama_base_url', 'http://localhost:11434'),
             'ollama_model': existing_config.get('ollama_model', 'qwen2.5:3b'),
         }
@@ -223,6 +263,10 @@ class EnhancedRunner:
         console.print(f"  Ordering: {file_ordering}")
         console.print(f"  Mode: {'Fast Dry Run' if fast_dry_run else 'Full Dry Run' if dry_run else 'Live Run'}")
         console.print(f"  Batch: {batch_size} file(s)")
+        console.print(
+            f"  Parallel: {'On' if parallel_processing_enabled else 'Off'}"
+            + (f" ({parallel_workers} worker(s))" if parallel_processing_enabled else "")
+        )
 
         return True
 
@@ -473,6 +517,16 @@ class EnhancedRunner:
                 console.print("[green]Mode: Full Dry Run (with AI, no file changes)[/green]")
         else:
             console.print("[yellow]⚠️  Mode: Live Run (will create _linked.md files)[/yellow]")
+
+        parallel_status = self.config.get('parallel_processing_enabled', False)
+        workers = self.config.get('parallel_workers', 1)
+        console.print(
+            f"Parallel processing: {'On' if parallel_status else 'Off'}"
+            + (f" ({workers} worker(s) requested)" if parallel_status else "")
+        )
+        console.print(
+            f"Enhanced dashboard: On (updates every {self.update_interval} seconds)"
+        )
 
         try:
             confirm = input("\nContinue? (y/N): ").strip().lower()

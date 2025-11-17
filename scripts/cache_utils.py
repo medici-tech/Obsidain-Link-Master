@@ -44,6 +44,14 @@ class BoundedCache:
         total_bytes = sum(self.entry_sizes.values())
         return total_bytes / (1024 * 1024)
 
+    def __len__(self) -> int:
+        """Return number of cached entries for len() support in tests."""
+        return len(self.cache)
+
+    def __contains__(self, key: str) -> bool:
+        """Allow `in` checks to mirror dict behaviour."""
+        return key in self.cache
+
     def _estimate_size(self, value: Any) -> int:
         """Estimate size of a value in bytes"""
         try:

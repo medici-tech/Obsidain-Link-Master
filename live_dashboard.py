@@ -22,6 +22,13 @@ from rich.live import Live
 from rich.text import Text
 from rich import box
 
+
+class ActivityEntry(dict):
+    """Dict that supports substring membership checks for display text."""
+
+    def __contains__(self, item: str) -> bool:  # type: ignore[override]
+        return item in self.get('display', '')
+
 class LiveDashboard:
     """
     Ultra-detailed live monitoring dashboard with 30-second updates
@@ -55,6 +62,7 @@ class LiveDashboard:
             'ai_response_times': deque(maxlen=100),  # Last 100 requests
             'tokens_per_second': 0,
             'avg_tokens': 0,
+            'ai_tokens': [],
 
             # Cache Performance
             'cache_hits': 0,
@@ -63,6 +71,12 @@ class LiveDashboard:
             'cache_entries': 0,
             'cache_lookup_times': deque(maxlen=100),
             'time_saved_seconds': 0,
+
+            # File processing performance
+            'file_processing_times': deque(maxlen=1000),
+            'file_times_small': deque(maxlen=1000),
+            'file_times_medium': deque(maxlen=1000),
+            'file_times_large': deque(maxlen=1000),
 
             # System Resources
             'cpu_percent': 0,
@@ -78,18 +92,22 @@ class LiveDashboard:
             'power_watts': 0,
 
             # File Analysis
-            'file_times_small': deque(maxlen=50),
-            'file_times_medium': deque(maxlen=50),
-            'file_times_large': deque(maxlen=50),
+            'file_times_small': deque(maxlen=1000),
+            'file_times_medium': deque(maxlen=1000),
+            'file_times_large': deque(maxlen=1000),
             'moc_distribution': {},
 
             # Error Tracking
             'recent_errors': deque(maxlen=10),
             'error_types': {},
+            'errors': [],
 
             # Activity Log
             'recent_activity': deque(maxlen=5),
         }
+
+        # Running state flag for lifecycle tests
+        self._running = False
 
         # Initial system baseline
         self.initial_disk_io = psutil.disk_io_counters()
@@ -101,11 +119,13 @@ class LiveDashboard:
     def start(self):
         """Start the dashboard"""
         self.running = True
+        self._running = True
         self.stats['start_time'] = datetime.now()
 
     def stop(self):
         """Stop the dashboard"""
         self.running = False
+        self._running = False
 
     def update_processing(self, **kwargs):
         """Update processing statistics"""
@@ -126,6 +146,7 @@ class LiveDashboard:
                 self.stats['avg_tokens'] = total_tokens / self.stats['ai_success']
                 if response_time > 0:
                     self.stats['tokens_per_second'] = tokens / response_time
+                self.stats['ai_tokens'].append(tokens)
         else:
             self.stats['ai_failures'] += 1
             if timeout:
@@ -137,9 +158,11 @@ class LiveDashboard:
         if lookup_time > 0:
             self.stats['cache_lookup_times'].append(lookup_time)
 
-    def add_cache_miss(self):
+    def add_cache_miss(self, lookup_time: float = 0.0):
         """Track cache miss"""
         self.stats['cache_misses'] += 1
+        if lookup_time:
+            self.stats['cache_lookup_times'].append(lookup_time)
 
     def update_cache_stats(self, size_mb: float, entries: int):
         """Update cache statistics"""
@@ -148,6 +171,7 @@ class LiveDashboard:
 
     def add_file_processing_time(self, file_size_kb: int, processing_time: float):
         """Track file processing time by size category"""
+        self.stats['file_processing_times'].append((file_size_kb, processing_time))
         if file_size_kb < 5:
             self.stats['file_times_small'].append(processing_time)
         elif file_size_kb < 50:
@@ -164,7 +188,16 @@ class LiveDashboard:
     def add_error(self, error_type: str, message: str):
         """Track error"""
         timestamp = datetime.now().strftime("%H:%M:%S")
+        error_entry = {
+            'type': error_type,
+            'message': message,
+            'timestamp': timestamp,
+        }
         self.stats['recent_errors'].append(f"[{timestamp}] {error_type}: {message}")
+        self.stats['errors'].append(error_entry)
+        if len(self.stats['errors']) > 1000:
+            # Keep most recent 1000 errors
+            self.stats['errors'] = self.stats['errors'][-1000:]
 
         if error_type not in self.stats['error_types']:
             self.stats['error_types'][error_type] = 0
@@ -174,52 +207,62 @@ class LiveDashboard:
         """Add activity log entry"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         icon = "✓" if success else "✗"
-        self.stats['recent_activity'].append(f"[{timestamp}] {icon} {message}")
+        self.stats['recent_activity'].append(ActivityEntry({
+            'timestamp': timestamp,
+            'message': message,
+            'success': success,
+            'display': f"[{timestamp}] {icon} {message}",
+        }))
 
     def update_system_resources(self):
         """Update system resource metrics - M4 optimized"""
-        # CPU
-        self.stats['cpu_percent'] = psutil.cpu_percent(interval=0.1)
-        self.stats['cpu_per_core'] = psutil.cpu_percent(interval=0.1, percpu=True)
-
-        # Memory
-        mem = psutil.virtual_memory()
-        self.stats['memory_percent'] = mem.percent
-        self.stats['memory_used_gb'] = mem.used / (1024**3)
-        self.stats['memory_total_gb'] = mem.total / (1024**3)
-
-        # Disk I/O
-        current_time = time.time()
-        time_delta = current_time - self.last_io_check
-
-        if time_delta > 0:
-            disk_io = psutil.disk_io_counters()
-            if disk_io and self.last_disk_io:
-                read_bytes = disk_io.read_bytes - self.last_disk_io.read_bytes
-                write_bytes = disk_io.write_bytes - self.last_disk_io.write_bytes
-                self.stats['disk_read_mb'] = (read_bytes / (1024**2)) / time_delta
-                self.stats['disk_write_mb'] = (write_bytes / (1024**2)) / time_delta
-                self.last_disk_io = disk_io
-
-            # Network I/O
-            net_io = psutil.net_io_counters()
-            if net_io and self.last_net_io:
-                sent_bytes = net_io.bytes_sent - self.last_net_io.bytes_sent
-                recv_bytes = net_io.bytes_recv - self.last_net_io.bytes_recv
-                self.stats['network_sent_kb'] = (sent_bytes / 1024) / time_delta
-                self.stats['network_recv_kb'] = (recv_bytes / 1024) / time_delta
-                self.last_net_io = net_io
-
-            self.last_io_check = current_time
-
-        # Try to get temperature (macOS specific)
         try:
-            temps = psutil.sensors_temperatures()
-            if temps and 'coretemp' in temps:
-                self.stats['temperature'] = temps['coretemp'][0].current
-        except (AttributeError, KeyError):
-            # Temperature sensors not available on all systems
-            pass
+            # CPU
+            self.stats['cpu_percent'] = psutil.cpu_percent(interval=0.1)
+            self.stats['cpu_per_core'] = psutil.cpu_percent(interval=0.1, percpu=True)
+
+            # Memory
+            mem = psutil.virtual_memory()
+            self.stats['memory_percent'] = mem.percent
+            self.stats['memory_used_gb'] = mem.used / (1024**3)
+            self.stats['memory_total_gb'] = mem.total / (1024**3)
+
+            # Disk I/O
+            current_time = time.time()
+            time_delta = current_time - self.last_io_check
+
+            if time_delta > 0:
+                disk_io = psutil.disk_io_counters()
+                if disk_io and self.last_disk_io:
+                    read_bytes = disk_io.read_bytes - self.last_disk_io.read_bytes
+                    write_bytes = disk_io.write_bytes - self.last_disk_io.write_bytes
+                    self.stats['disk_read_mb'] = (read_bytes / (1024**2)) / time_delta
+                    self.stats['disk_write_mb'] = (write_bytes / (1024**2)) / time_delta
+                    self.last_disk_io = disk_io
+
+                # Network I/O
+                net_io = psutil.net_io_counters()
+                if net_io and self.last_net_io:
+                    sent_bytes = net_io.bytes_sent - self.last_net_io.bytes_sent
+                    recv_bytes = net_io.bytes_recv - self.last_net_io.bytes_recv
+                    self.stats['network_sent_kb'] = (sent_bytes / 1024) / time_delta
+                    self.stats['network_recv_kb'] = (recv_bytes / 1024) / time_delta
+                    self.last_net_io = net_io
+
+                self.last_io_check = current_time
+
+            # Try to get temperature (macOS specific)
+            try:
+                temps = psutil.sensors_temperatures()
+                if temps and 'coretemp' in temps:
+                    self.stats['temperature'] = temps['coretemp'][0].current
+            except (AttributeError, KeyError):
+                # Temperature sensors not available on all systems
+                pass
+        except Exception:
+            # Gracefully degrade when psutil is unavailable
+            self.stats['cpu_percent'] = 0
+            self.stats['cpu_per_core'] = []
 
     def _calculate_stats(self, values: deque) -> Dict[str, float]:
         """Calculate min, max, avg, median from deque"""
@@ -395,9 +438,11 @@ class LiveDashboard:
 
     def _create_activity_panel(self) -> Panel:
         """Create recent activity panel"""
-        activities = list(self.stats['recent_activity'])
-        if not activities:
+        raw_entries = list(self.stats['recent_activity'])
+        if not raw_entries:
             activities = ["No activity yet"]
+        else:
+            activities = [entry['display'] if isinstance(entry, dict) else str(entry) for entry in raw_entries]
 
         content = "\n".join(activities)
         return Panel(content, title="📜 RECENT ACTIVITY", border_style="white", box=box.ROUNDED)
