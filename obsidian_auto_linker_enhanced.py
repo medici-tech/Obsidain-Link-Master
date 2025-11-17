@@ -12,6 +12,7 @@ import json
 import shutil
 import hashlib
 import time
+import threading
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 import requests
@@ -610,6 +611,13 @@ def get_all_notes(vault_path: str) -> Dict[str, str]:
                     logger.debug(f"Could not read {file}: {e}")
                     continue
     return notes
+
+
+class ObsidianAutoLinker:
+    """Lightweight adapter exposing helper methods for benchmark tests."""
+
+    def get_content_hash(self, content: str) -> str:
+        return get_content_hash(content)
 
 def create_moc_note(moc_name: str, vault_path: str) -> None:
     """Create MOC note if it doesn't exist"""

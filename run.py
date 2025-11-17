@@ -4,23 +4,28 @@ Interactive Obsidian Auto-Linker Runner
 Provides easy configuration and process control
 """
 
+import argparse
+import json
 import os
-import sys
 import signal
 import subprocess
+import sys
 import time
-import json
-import psutil
 import threading
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+import psutil
 
 class ObsidianAutoLinker:
-    def __init__(self):
+    def __init__(self, *, force_dashboard: Optional[bool] = None, auto_confirm: bool = False):
         self.process = None
         self.running = False
         self.monitoring = False
+        self.force_dashboard = force_dashboard
         self.enable_dashboard = False
+        self.auto_confirm = auto_confirm
         self.resource_stats = {
             'start_time': None,
             'peak_cpu': 0,
@@ -65,12 +70,16 @@ class ObsidianAutoLinker:
         print("📁 Obsidian Vault Path:")
         print(f"   Default: {default_path}")
 
-        try:
-            vault_path = input("   Enter path (or press Enter for default): ").strip()
-        except EOFError:
-            # Non-interactive mode, use default
+        if self.auto_confirm:
             vault_path = default_path
-            print(f"   Using default: {vault_path}")
+            print(f"   Auto-selecting default vault: {vault_path}")
+        else:
+            try:
+                vault_path = input("   Enter path (or press Enter for default): ").strip()
+            except EOFError:
+                # Non-interactive mode, use default
+                vault_path = default_path
+                print(f"   Using default: {vault_path}")
 
         if not vault_path:
             vault_path = default_path
@@ -167,12 +176,16 @@ class ObsidianAutoLinker:
         print("   4. Alphabetical")
 
         while True:
-            try:
-                choice = input("   Choose (1-4, default=1): ").strip()
-            except EOFError:
-                # Non-interactive mode, use default
+            if self.auto_confirm:
                 choice = "1"
-                print("   Using default: 1")
+                print("   Auto-selecting order: recent")
+            else:
+                try:
+                    choice = input("   Choose (1-4, default=1): ").strip()
+                except EOFError:
+                    # Non-interactive mode, use default
+                    choice = "1"
+                    print("   Using default: 1")
 
             if not choice:
                 return "recent"
@@ -195,12 +208,16 @@ class ObsidianAutoLinker:
         print("   3. Live Run (process files for real)")
 
         while True:
-            try:
-                choice = input("   Choose (1-3, default=1): ").strip()
-            except EOFError:
-                # Non-interactive mode, use default
+            if self.auto_confirm:
                 choice = "1"
-                print("   Using default: 1")
+                print("   Auto-selecting mode: Fast Dry Run")
+            else:
+                try:
+                    choice = input("   Choose (1-3, default=1): ").strip()
+                except EOFError:
+                    # Non-interactive mode, use default
+                    choice = "1"
+                    print("   Using default: 1")
 
             if not choice:
                 return "fast_dry"
@@ -221,12 +238,16 @@ class ObsidianAutoLinker:
         print("   3. Medium batch (10 files)")
 
         while True:
-            try:
-                choice = input("   Choose (1-3, default=1): ").strip()
-            except EOFError:
-                # Non-interactive mode, use default
+            if self.auto_confirm:
                 choice = "1"
-                print("   Using default: 1")
+                print("   Auto-selecting batch size: 1")
+            else:
+                try:
+                    choice = input("   Choose (1-3, default=1): ").strip()
+                except EOFError:
+                    # Non-interactive mode, use default
+                    choice = "1"
+                    print("   Using default: 1")
 
             if not choice:
                 return 1
@@ -241,17 +262,26 @@ class ObsidianAutoLinker:
 
     def get_dashboard_preference(self):
         """Ask if user wants to enable the live dashboard"""
+        if self.force_dashboard is True:
+            return True
+        if self.force_dashboard is False:
+            return False
+
         print("\n📊 Live Dashboard:")
         print("   1. Enable dashboard (real-time metrics and monitoring)")
         print("   2. Disable dashboard (simple text output)")
 
         while True:
-            try:
-                choice = input("   Choose (1-2, default=1): ").strip()
-            except EOFError:
-                # Non-interactive mode, use default
+            if self.auto_confirm:
                 choice = "1"
-                print("   Using default: 1")
+                print("   Auto-selecting dashboard: enabled")
+            else:
+                try:
+                    choice = input("   Choose (1-2, default=1): ").strip()
+                except EOFError:
+                    # Non-interactive mode, use default
+                    choice = "1"
+                    print("   Using default: 1")
 
             if not choice:
                 return True
@@ -481,12 +511,16 @@ vault_path: {vault_path}
         else:
             print("   ✅ FULL DRY RUN: Complete test with AI analysis")
 
-        try:
-            confirm = input("\n   Continue? (y/N): ").strip().lower()
-        except EOFError:
-            # Non-interactive mode, auto-confirm
+        if self.auto_confirm:
             confirm = "y"
-            print("   Auto-confirming (non-interactive mode)")
+            print("   Auto-confirming configuration")
+        else:
+            try:
+                confirm = input("\n   Continue? (y/N): ").strip().lower()
+            except EOFError:
+                # Non-interactive mode, auto-confirm
+                confirm = "y"
+                print("   Auto-confirming (non-interactive mode)")
 
         if confirm not in ['y', 'yes']:
             print("❌ Cancelled by user")
@@ -496,7 +530,23 @@ vault_path: {vault_path}
         self.update_config(vault_path, file_ordering, processing_mode, batch_size)
         self.run_processing()
 
-if __name__ == "__main__":
-    app = ObsidianAutoLinker()
+def parse_args(argv=None):
+    """Parse CLI flags so both runners share the same entry point."""
+    parser = argparse.ArgumentParser(description="Obsidian Auto-Linker interactive runner")
+    dash_group = parser.add_mutually_exclusive_group()
+    dash_group.add_argument("--dashboard", dest="force_dashboard", action="store_true", help="force-enable the live dashboard")
+    dash_group.add_argument("--no-dashboard", dest="force_dashboard", action="store_false", help="force-disable the live dashboard")
+    parser.add_argument("--non-interactive", action="store_true", help="auto-select defaults and auto-confirm prompts")
+    parser.set_defaults(force_dashboard=None)
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    app = ObsidianAutoLinker(force_dashboard=args.force_dashboard, auto_confirm=args.non_interactive)
     app.main()
+
+
+if __name__ == "__main__":
+    main()
 

@@ -1,218 +1,279 @@
-"""
-Pytest fixtures and configuration for Obsidian Auto-Linker tests
-"""
+# -*- coding: utf-8 -*-
+"""Central pytest fixtures and helpers for the Obsidian Auto-Linker suite."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+from typing import Any, Dict, Iterable
+from unittest.mock import Mock, patch
 
 import pytest
-import tempfile
-import os
 import yaml
-import json
-from pathlib import Path
+
+try:  # Optional dependency used by mock_datetime
+    from freezegun import freeze_time
+except ImportError:  # pragma: no cover - best effort fallback for environments without freezegun
+    freeze_time = None
+
+try:  # pytest-benchmark provides the real fixture when installed
+    import pytest_benchmark.plugin  # noqa: F401 - imported for its side effects
+except ImportError:  # pragma: no cover - lightweight fallback so tests still run
+
+    @pytest.fixture
+    def benchmark():
+        """Fallback benchmark fixture that simply executes the callable once."""
+
+        def runner(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        return runner
+
+
+# ---------------------------------------------------------------------------
+# Basic filesystem utilities
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def temp_dir():
-    """Create a temporary directory for tests"""
+def temp_dir() -> Iterable[str]:
+    """Yield a temporary directory and clean it up afterwards."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield tmpdir
 
 
 @pytest.fixture
-def sample_config_yaml(temp_dir):
-    """Create a sample config.yaml file"""
-    config_path = os.path.join(temp_dir, 'config.yaml')
-    config_data = {
-        'vault_path': '/path/to/vault',
-        'dry_run': True,
-        'fast_dry_run': False,
-        'batch_size': 5,
-        'file_ordering': 'recent',
-        'ollama_base_url': 'http://localhost:11434',
-        'ollama_model': 'qwen2.5:3b',
-    }
-    with open(config_path, 'w') as f:
-        yaml.dump(config_data, f)
-    return config_path
+def temp_vault() -> Iterable[str]:
+    """Create a persistent temporary vault that can be mutated across a test."""
+    tmpdir = tempfile.mkdtemp()
+    try:
+        yield tmpdir
+    finally:
+        shutil.rmtree(tmpdir)
 
 
 @pytest.fixture
-def sample_json_file(temp_dir):
-    """Create a sample JSON file"""
-    json_path = os.path.join(temp_dir, 'test.json')
-    json_data = {
-        'test_key': 'test_value',
-        'number': 42,
-        'list': [1, 2, 3]
-    }
-    with open(json_path, 'w') as f:
-        json.dump(json_data, f)
-    return json_path
-
-
-@pytest.fixture
-def mock_vault(temp_dir):
-    """Create a mock Obsidian vault with sample files"""
-    vault_path = os.path.join(temp_dir, 'vault')
+def mock_vault(temp_dir: str) -> str:
+    """Create a mock Obsidian vault with a few markdown notes."""
+    vault_path = os.path.join(temp_dir, "vault")
     os.makedirs(vault_path)
 
-    # Create some sample markdown files
     notes = {
-        'note1.md': '# Note 1\n\nSome content here.',
-        'note2.md': '# Note 2\n\nMore content.',
-        'conversation.md': '# Conversation\n\nA discussion about something.',
+        "note1.md": "# Note 1\n\nSome content here.",
+        "note2.md": "# Note 2\n\nMore content.",
+        "conversation.md": "# Conversation\n\nA discussion about something.",
     }
 
     for filename, content in notes.items():
-        with open(os.path.join(vault_path, filename), 'w') as f:
+        with open(os.path.join(vault_path, filename), "w", encoding="utf-8") as f:
             f.write(content)
 
     return vault_path
 
 
 @pytest.fixture
-def empty_vault(temp_dir):
-    """Create an empty Obsidian vault"""
-    vault_path = os.path.join(temp_dir, 'empty_vault')
+def empty_vault(temp_dir: str) -> str:
+    """Return an empty vault directory."""
+    vault_path = os.path.join(temp_dir, "empty_vault")
     os.makedirs(vault_path)
     return vault_path
-Pytest configuration and shared fixtures for Obsidian Auto-Linker tests
-"""
 
-import os
-import json
-import tempfile
-import shutil
-from pathlib import Path
-from typing import Dict, Any
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+
+# ---------------------------------------------------------------------------
+# Config/data file helpers
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def temp_vault():
-    """Create a temporary vault directory for testing"""
-    temp_dir = tempfile.mkdtemp()
-    yield temp_dir
-    shutil.rmtree(temp_dir)
+def sample_config_yaml(temp_dir: str) -> Path:
+    """Create a temporary config.yaml for CLI tests."""
+    config_path = Path(temp_dir) / "config.yaml"
+    config_data = {
+        "vault_path": "/path/to/vault",
+        "dry_run": True,
+        "fast_dry_run": False,
+        "batch_size": 5,
+        "file_ordering": "recent",
+        "ollama_base_url": "http://localhost:11434",
+        "ollama_model": "qwen2.5:3b",
+    }
+    with config_path.open("w", encoding="utf-8") as fh:
+        yaml.safe_dump(config_data, fh)
+    return config_path
 
 
 @pytest.fixture
-def sample_config():
-    """Sample configuration for testing"""
+def sample_json_file(temp_dir: str) -> Path:
+    """Create a sample JSON file on disk."""
+    json_path = Path(temp_dir) / "test.json"
+    payload = {"test_key": "test_value", "number": 42, "list": [1, 2, 3]}
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    return json_path
+
+
+@pytest.fixture
+def sample_config() -> Dict[str, Any]:
+    """Return an in-memory configuration dictionary."""
     return {
-        'vault_path': '/tmp/test_vault',
-        'backup_folder': '_backups',
-        'dry_run': True,
-        'fast_dry_run': False,
-        'max_backups': 5,
-        'max_siblings': 5,
-        'batch_size': 1,
-        'max_retries': 3,
-        'parallel_workers': 1,
-        'file_ordering': 'recent',
-        'resume_enabled': True,
-        'cache_enabled': True,
-        'interactive_mode': False,
-        'analytics_enabled': True,
-        'confidence_threshold': 0.8,
-        'enable_review_queue': True,
-        'review_queue_path': 'reviews/',
-        'dry_run_limit': 10,
-        'dry_run_interactive': False,
-        'ollama_base_url': 'http://localhost:11434',
-        'ollama_model': 'qwen3:8b',
-        'ollama_timeout': 300,
-        'ollama_max_retries': 5,
-        'ollama_temperature': 0.1,
-        'ollama_max_tokens': 1024,
+        "vault_path": "/tmp/test_vault",
+        "backup_folder": "_backups",
+        "dry_run": True,
+        "fast_dry_run": False,
+        "max_backups": 5,
+        "max_siblings": 5,
+        "batch_size": 1,
+        "max_retries": 3,
+        "parallel_workers": 1,
+        "file_ordering": "recent",
+        "resume_enabled": True,
+        "cache_enabled": True,
+        "interactive_mode": False,
+        "analytics_enabled": True,
+        "confidence_threshold": 0.8,
+        "enable_review_queue": True,
+        "review_queue_path": "reviews/",
+        "dry_run_limit": 10,
+        "dry_run_interactive": False,
+        "ollama_base_url": "http://localhost:11434",
+        "ollama_model": "qwen3:8b",
+        "ollama_timeout": 300,
+        "ollama_max_retries": 5,
+        "ollama_temperature": 0.1,
+        "ollama_max_tokens": 1024,
     }
 
 
 @pytest.fixture
-def sample_markdown_content():
-    """Sample markdown content for testing"""
-    return """# Test Conversation
+def mock_config_file(temp_vault: str, sample_config: Dict[str, Any]) -> Path:
+    """Write a config file in the temporary vault."""
+    config_path = Path(temp_vault) / "config.yaml"
+    config_path.write_text(yaml.safe_dump(sample_config), encoding="utf-8")
+    return config_path
 
-This is a test conversation about business strategy and technical implementation.
 
-## Discussion Points
-
-- Revenue optimization
-- Market analysis
-- Technical architecture
-- API integration
-
-## Action Items
-
-1. Review current strategy
-2. Implement new features
-3. Analyze market trends
-"""
+# ---------------------------------------------------------------------------
+# Markdown/content fixtures
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def sample_markdown_file(temp_vault, sample_markdown_content):
-    """Create a sample markdown file in temp vault"""
-    file_path = os.path.join(temp_vault, "test_conversation.md")
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(sample_markdown_content)
+def sample_markdown_content() -> str:
+    """Provide representative markdown input."""
+    return (
+        "# Test Conversation\n\n"
+        "This is a test conversation about business strategy and technical implementation.\n\n"
+        "## Discussion Points\n\n"
+        "- Revenue optimization\n"
+        "- Market analysis\n"
+        "- Technical architecture\n"
+        "- API integration\n\n"
+        "## Action Items\n\n"
+        "1. Review current strategy\n"
+        "2. Implement new features\n"
+        "3. Analyze market trends\n"
+    )
+
+
+@pytest.fixture
+def sample_markdown_file(temp_vault: str, sample_markdown_content: str) -> Path:
+    """Create a markdown file inside the temp vault and return its path."""
+    file_path = Path(temp_vault) / "test_conversation.md"
+    file_path.write_text(sample_markdown_content, encoding="utf-8")
     return file_path
 
 
 @pytest.fixture
-def sample_processed_content():
-    """Sample processed markdown with metadata"""
-    return """# Test Conversation
+def mock_file_system(temp_dir: str) -> str:
+    """Provide a lightweight vault filled with markdown files for integration tests."""
 
-This is a test conversation.
+    vault_path = Path(temp_dir) / "mock_file_system"
+    vault_path.mkdir(parents=True, exist_ok=True)
 
----
-## 📊 METADATA
+    sample_files = {
+        "conversation1.md": "# Conversation 1\n\nSome detailed business notes.",
+        "conversation2.md": "# Conversation 2\n\nMore analytical insights.",
+        "meeting_notes.md": "# Meeting Notes\n\nAction items and summaries.",
+        "ideas.md": "# Ideas\n\nBrainstorming content.",
+    }
 
-Primary Topic: Business Strategy
-Topic Area: Business Operations
-Confidence: 85%
+    for filename, content in sample_files.items():
+        (vault_path / filename).write_text(content, encoding="utf-8")
 
----
-## 🔗 WIKI STRUCTURE
-
-Parent: [[📍 Business Operations MOC]]
-Siblings: [[Related Note 1]] · [[Related Note 2]]
-Children: None yet
-
----
-## 💡 KEY CONCEPTS
-
-- Revenue optimization
-- Market analysis
-
----
-## 🏷️ TAGS
-
-#business #strategy #operations
-"""
+    return str(vault_path)
 
 
 @pytest.fixture
-def mock_ollama_response():
-    """Mock Ollama API response"""
+def sample_processed_content() -> str:
+    """Return sample processed markdown with metadata sections."""
+    return (
+        "# Test Conversation\n\n"
+        "This is a test conversation.\n\n"
+        "---\n"
+        "## 📊 METADATA\n\n"
+        "Primary Topic: Business Strategy\n"
+        "Topic Area: Business Operations\n"
+        "Confidence: 85%\n\n"
+        "---\n"
+        "## 🔗 WIKI STRUCTURE\n\n"
+        "Parent: [[📍 Business Operations MOC]]\n"
+        "Siblings: [[Related Note 1]] · [[Related Note 2]]\n"
+        "Children: None yet\n\n"
+        "---\n"
+        "## 💡 KEY CONCEPTS\n\n"
+        "- Revenue optimization\n"
+        "- Market analysis\n\n"
+        "---\n"
+        "## 🏷️ TAGS\n\n"
+        "#business #strategy #operations\n"
+    )
+
+
+@pytest.fixture
+def sample_existing_notes() -> Dict[str, str]:
+    """Simulate already indexed vault notes."""
     return {
-        'response': json.dumps({
-            'moc_category': 'Business Operations',
-            'primary_topic': 'Business Strategy Discussion',
-            'hierarchical_tags': ['business', 'strategy', 'operations'],
-            'key_concepts': ['revenue optimization', 'market analysis', 'technical architecture'],
-            'sibling_notes': ['Related Note 1', 'Related Note 2'],
-            'confidence_score': 0.85,
-            'reasoning': 'Content discusses business operations and strategic planning'
-        })
+        "Related Note 1": "Content preview for note 1...",
+        "Related Note 2": "Content preview for note 2...",
+        "API Guide": "Guide about API development...",
+        "Business Strategy": "Strategic planning notes...",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Ollama/LLM fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_ollama_response() -> Dict[str, Any]:
+    """Mock payload returned by Ollama endpoint."""
+    return {
+        "response": json.dumps(
+            {
+                "moc_category": "Business Operations",
+                "primary_topic": "Business Strategy Discussion",
+                "hierarchical_tags": ["business", "strategy", "operations"],
+                "key_concepts": [
+                    "revenue optimization",
+                    "market analysis",
+                    "technical architecture",
+                ],
+                "sibling_notes": ["Related Note 1", "Related Note 2"],
+                "confidence_score": 0.85,
+                "reasoning": "Content discusses business operations and strategic planning",
+            }
+        )
     }
 
 
 @pytest.fixture
-def mock_ollama_success(mock_ollama_response):
-    """Mock successful Ollama API call"""
-    with patch('requests.post') as mock_post:
+def mock_ollama_success(mock_ollama_response: Dict[str, Any]):
+    """Patch requests.post so that it returns a canned JSON payload."""
+    with patch("requests.post") as mock_post:
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = mock_ollama_response
         mock_post.return_value.raise_for_status = Mock()
@@ -221,165 +282,149 @@ def mock_ollama_success(mock_ollama_response):
 
 @pytest.fixture
 def mock_ollama_timeout():
-    """Mock Ollama API timeout"""
-    with patch('requests.post') as mock_post:
+    """Force requests.post to raise a timeout."""
+    with patch("requests.post") as mock_post:
         import requests
+
         mock_post.side_effect = requests.exceptions.Timeout("Connection timeout")
         yield mock_post
 
 
 @pytest.fixture
 def mock_ollama_error():
-    """Mock Ollama API error"""
-    with patch('requests.post') as mock_post:
+    """Force requests.post to raise a generic RequestException."""
+    with patch("requests.post") as mock_post:
         import requests
+
         mock_post.side_effect = requests.exceptions.RequestException("API error")
         yield mock_post
 
 
+# ---------------------------------------------------------------------------
+# Progress/cache helpers
+# ---------------------------------------------------------------------------
+
+
 @pytest.fixture
-def sample_cache():
-    """Sample cache data"""
+def sample_cache() -> Dict[str, Any]:
+    """Provide a populated cache entry for cache-related tests."""
     return {
-        'abc123': {
-            'moc_category': 'Technical & Automation',
-            'primary_topic': 'API Development',
-            'hierarchical_tags': ['api', 'development', 'technical'],
-            'key_concepts': ['REST API', 'Authentication', 'Integration'],
-            'sibling_notes': ['API Guide', 'Auth Implementation'],
-            'confidence_score': 0.9,
-            'reasoning': 'Technical content about API development'
+        "abc123": {
+            "moc_category": "Technical & Automation",
+            "primary_topic": "API Development",
+            "hierarchical_tags": ["api", "development", "technical"],
+            "key_concepts": ["REST API", "Authentication", "Integration"],
+            "sibling_notes": ["API Guide", "Auth Implementation"],
+            "confidence_score": 0.9,
+            "reasoning": "Technical content about API development",
         }
     }
 
 
 @pytest.fixture
-def sample_progress_data():
-    """Sample progress tracking data"""
+def sample_progress_data() -> Dict[str, Any]:
+    """Return progress-tracking metadata."""
     return {
-        'processed_files': ['/path/to/file1.md', '/path/to/file2.md'],
-        'failed_files': ['/path/to/failed.md'],
-        'current_batch': 1,
-        'last_update': '2024-01-01T12:00:00'
+        "processed_files": ["/path/to/file1.md", "/path/to/file2.md"],
+        "failed_files": ["/path/to/failed.md"],
+        "current_batch": 1,
+        "last_update": "2024-01-01T12:00:00",
     }
 
 
 @pytest.fixture
-def sample_analytics():
-    """Sample analytics data"""
+def sample_analytics() -> Dict[str, Any]:
+    """Representative analytics snapshot."""
     return {
-        'start_time': '2024-01-01T10:00:00',
-        'end_time': '2024-01-01T11:00:00',
-        'total_files': 100,
-        'processed_files': 85,
-        'skipped_files': 10,
-        'failed_files': 5,
-        'processing_time': 3600,
-        'moc_distribution': {
-            'Business Operations': 20,
-            'Technical & Automation': 30,
-            'Learning & Skills': 15,
-            'Life & Misc': 20
+        "start_time": "2024-01-01T10:00:00",
+        "end_time": "2024-01-01T11:00:00",
+        "total_files": 100,
+        "processed_files": 85,
+        "skipped_files": 10,
+        "failed_files": 5,
+        "processing_time": 3600,
+        "moc_distribution": {
+            "Business Operations": 20,
+            "Technical & Automation": 30,
+            "Learning & Skills": 15,
+            "Life & Misc": 20,
         },
-        'error_types': {
-            'timeout': 3,
-            'parse_error': 2
-        },
-        'retry_attempts': 12,
-        'cache_hits': 45,
-        'cache_misses': 40
+        "error_types": {"timeout": 3, "parse_error": 2},
+        "retry_attempts": 12,
+        "cache_hits": 45,
+        "cache_misses": 40,
     }
 
 
 @pytest.fixture
-def sample_existing_notes():
-    """Sample existing notes in vault"""
-    return {
-        'Related Note 1': 'Content preview for note 1...',
-        'Related Note 2': 'Content preview for note 2...',
-        'API Guide': 'Guide about API development...',
-        'Business Strategy': 'Strategic planning notes...'
-    }
-
-
-@pytest.fixture
-def mock_file_system(temp_vault):
-    """Mock file system with sample files"""
-    # Create some sample files
-    files = [
-        'conversation1.md',
-        'conversation2.md',
-        'technical_note.md',
-        'business_plan.md'
+def sample_file_set(temp_vault: str) -> str:
+    """Populate the temp vault with multiple markdown files for listing tests."""
+    filenames = [
+        "conversation1.md",
+        "conversation2.md",
+        "technical_note.md",
+        "business_plan.md",
     ]
-
-    for filename in files:
-        file_path = os.path.join(temp_vault, filename)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(f"# {filename}\n\nSample content for {filename}")
-
+    for filename in filenames:
+        path = Path(temp_vault) / filename
+        path.write_text(f"# {filename}\n\nSample content for {filename}", encoding="utf-8")
     return temp_vault
 
 
 @pytest.fixture
-def mock_config_file(temp_vault, sample_config):
-    """Create a temporary config file"""
-    config_path = os.path.join(temp_vault, 'config.yaml')
-    import yaml
-    with open(config_path, 'w') as f:
-        yaml.dump(sample_config, f)
-    return config_path
-
-
-@pytest.fixture
-def content_hash_fixture():
-    """Fixture for testing content hashing"""
+def content_hash_fixture() -> tuple[str, str]:
+    """Return content and its expected md5 hash for quick verification."""
     test_content = "This is test content for hashing"
-    import hashlib
     expected_hash = hashlib.md5(test_content.encode()).hexdigest()
     return test_content, expected_hash
 
 
+# ---------------------------------------------------------------------------
+# Autouse/global fixtures
+# ---------------------------------------------------------------------------
+
+
 @pytest.fixture(autouse=True)
-def reset_globals():
-    """Reset global variables before each test"""
-    # This ensures tests don't interfere with each other
+def reset_globals():  # pragma: no cover - placeholder for future shared state resets
+    """Placeholder to reset globals between tests (extend when globals are added)."""
     yield
-    # Cleanup after test
-    pass
 
 
 @pytest.fixture
 def mock_datetime():
-    """Mock datetime for consistent timestamps"""
-    from freezegun import freeze_time
+    """Freeze datetime for deterministic timestamp assertions."""
+    if freeze_time is None:
+        pytest.skip("freezegun is not installed")
     with freeze_time("2024-01-01 12:00:00"):
         yield
 
 
-# Custom assertions
-def assert_file_exists(file_path: str):
-    """Assert that a file exists"""
+# ---------------------------------------------------------------------------
+# Helper assertions used across tests
+# ---------------------------------------------------------------------------
+
+
+def assert_file_exists(file_path: str) -> None:
+    """Assert that a file exists on disk."""
     assert os.path.exists(file_path), f"File does not exist: {file_path}"
 
 
-def assert_valid_json(json_string: str):
-    """Assert that a string is valid JSON"""
+def assert_valid_json(json_string: str) -> None:
+    """Ensure that json.loads succeeds for the provided string."""
     try:
         json.loads(json_string)
-    except json.JSONDecodeError as e:
-        pytest.fail(f"Invalid JSON: {e}")
+    except json.JSONDecodeError as exc:  # pragma: no cover - pytest.fail raises
+        pytest.fail(f"Invalid JSON: {exc}")
 
 
-def assert_markdown_structure(content: str):
-    """Assert that content has valid markdown structure"""
-    assert '# ' in content, "Missing markdown headers"
+def assert_markdown_structure(content: str) -> None:
+    """Verify that key markdown headers exist."""
+    assert "# " in content, "Missing markdown headers"
 
 
-# Helper functions for tests
 def create_test_file(directory: str, filename: str, content: str) -> str:
-    """Create a test file and return its path"""
+    """Create a file in the target directory and return its path."""
     file_path = os.path.join(directory, filename)
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(content)
+    with open(file_path, "w", encoding="utf-8") as fh:
+        fh.write(content)
     return file_path
