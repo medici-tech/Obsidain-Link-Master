@@ -32,9 +32,9 @@
 *(No tasks currently in progress)*
 
 #### 📝 Planned - Priority 3
-- [ ] Property-based tests with Hypothesis
-- [ ] Mutation testing with mutmut
-- [ ] Snapshot testing for reports
+- [x] Property-based tests with Hypothesis
+- [x] Mutation testing with mutmut
+- [x] Snapshot testing for reports
 - [ ] Contract tests for API interactions
 
 ---
