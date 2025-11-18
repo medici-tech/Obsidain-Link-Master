@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Interactive Obsidian Auto-Linker Runner
-Provides easy configuration and process control
+Interactive Obsidian Auto-Linker runner.
+
+This file remains as a compatibility wrapper around the canonical
+``obsidian-link-master`` console script (and ``python -m
+obsidian_link_master``) so existing workflows keep functioning while the
+package entrypoint stays centralized.
 """
 
 import argparse
@@ -18,6 +22,9 @@ from typing import Optional
 
 import psutil
 
+from config_utils import ensure_directory_exists, validate_vault_path
+from obsidian_link_master.configuration import load_runtime_config
+
 class ObsidianAutoLinker:
     def __init__(self, *, force_dashboard: Optional[bool] = None, auto_confirm: bool = False):
         self.process = None
@@ -26,6 +33,13 @@ class ObsidianAutoLinker:
         self.force_dashboard = force_dashboard
         self.enable_dashboard = False
         self.auto_confirm = auto_confirm
+        self.runtime_config = load_runtime_config()
+        self.config = self.runtime_config.__dict__.copy()
+        self.default_vault_path = (
+            os.environ.get("OBSIDIAN_VAULT_PATH")
+            or self.runtime_config.vault_path
+            or str(Path.cwd() / "vault")
+        )
         self.resource_stats = {
             'start_time': None,
             'peak_cpu': 0,
@@ -65,7 +79,7 @@ class ObsidianAutoLinker:
 
     def get_vault_path(self):
         """Get vault path from user"""
-        default_path = "/Users/medici/Documents/MediciVault"
+        default_path = self.default_vault_path
 
         print("📁 Obsidian Vault Path:")
         print(f"   Default: {default_path}")
@@ -84,11 +98,14 @@ class ObsidianAutoLinker:
         if not vault_path:
             vault_path = default_path
 
-        if not os.path.exists(vault_path):
-            print(f"❌ Path does not exist: {vault_path}")
+        resolved_path = os.path.expanduser(vault_path)
+
+        if not validate_vault_path(resolved_path, must_exist=False):
+            print(f"❌ Invalid vault path: {resolved_path}")
             return None
 
-        return vault_path
+        ensure_directory_exists(resolved_path, create=True)
+        return resolved_path
 
     def start_resource_monitoring(self):
         """Start monitoring system resources"""
