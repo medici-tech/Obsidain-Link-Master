@@ -49,7 +49,7 @@ from scripts.cache_utils import BoundedCache, IncrementalTracker
 from scripts.incremental_processing import FileHashTracker, create_hash_tracker
 
 DEFAULT_CONFIG = {
-    'vault_path': str(Path.cwd() / 'vault'),
+    'vault_path': str(Path('/Users/medici/Documents/MediciVault')),
     'backup_folder': '_backups',
     'dry_run': True,
     'fast_dry_run': False,

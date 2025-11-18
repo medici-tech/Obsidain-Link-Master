@@ -5,4 +5,4 @@ fast_dry_run: True
 file_ordering: 'recent'
 ollama_base_url: http://localhost:11434
 ollama_model: qwen2.5:3b
-vault_path: ./vault
+vault_path: /Users/medici/Documents/MediciVault
