@@ -198,6 +198,16 @@ def _load_runtime_config(config_path: str = 'config.yaml') -> RuntimeConfig:
     )
 
 
+@dataclass
+class ProcessingContext:
+    """Holds runtime services and resolved configuration."""
+
+    config: RuntimeConfig
+    ai_provider: str
+    claude_client: Optional[Any] = None
+    dashboard: Optional[LiveDashboard] = None
+
+
 # Initialize logger
 logger = get_logger(__name__)
 
@@ -280,10 +290,10 @@ CLAUDE_TIMEOUT = runtime_config.claude_timeout
 claude_client = None
 
 
-def _resolve_ai_provider() -> str:
+def _resolve_ai_provider(config_obj: RuntimeConfig = runtime_config) -> str:
     """Determine the active AI provider with validation and fallbacks."""
 
-    provider = AI_PROVIDER
+    provider = config_obj.ai_provider
     if provider != 'claude':
         return provider
 
@@ -291,7 +301,7 @@ def _resolve_ai_provider() -> str:
         logger.warning("⚠️  anthropic package not installed; falling back to Ollama")
         return 'ollama'
 
-    if not CLAUDE_API_KEY:
+    if not config_obj.claude_api_key:
         logger.warning(
             "⚠️  Claude provider selected but no API key found. Set ANTHROPIC_API_KEY"
             " or update config.yaml. Falling back to Ollama."
@@ -301,66 +311,98 @@ def _resolve_ai_provider() -> str:
     return provider
 
 
-def _ensure_claude_client():
+def _ensure_claude_client(context: ProcessingContext) -> Optional[Any]:
     """Create a Claude client only when the provider is enabled and configured."""
 
-    global claude_client
-    if claude_client:
-        return claude_client
+    if context.claude_client:
+        return context.claude_client
 
-    if _resolve_ai_provider() != 'claude':
+    if context.ai_provider != 'claude':
         return None
 
     try:
-        claude_client = Anthropic(api_key=CLAUDE_API_KEY)
-        logger.info("✅ Claude API initialized (model: %s)", CLAUDE_MODEL)
+        context.claude_client = Anthropic(api_key=context.config.claude_api_key)
+        logger.info("✅ Claude API initialized (model: %s)", context.config.claude_model)
     except Exception as exc:  # noqa: BLE001 - surface configuration failures
         logger.warning("⚠️  Failed to initialize Claude client: %s", exc)
-        claude_client = None
+        context.claude_client = None
 
-    return claude_client
+    return context.claude_client
+
+
+def create_processing_context(
+    *, enable_dashboard: bool = False, dashboard_update_interval: int = 15,
+    config_obj: RuntimeConfig = runtime_config,
+) -> ProcessingContext:
+    """Factory that prepares provider clients and optional dashboard."""
+
+    dashboard = None
+    if enable_dashboard:
+        dashboard = LiveDashboard(update_interval=dashboard_update_interval)
+        dashboard.start()
+
+    context = ProcessingContext(
+        config=config_obj,
+        ai_provider=_resolve_ai_provider(config_obj),
+        claude_client=None,
+        dashboard=dashboard,
+    )
+    _ensure_claude_client(context)
+    return context
 
 
 AI_PROVIDER = _resolve_ai_provider()
+
+# Default context for callers that don't manage their own lifecycle
+DEFAULT_PROCESSING_CONTEXT = create_processing_context()
 
 # Cost tracking disabled for local LLM (free to use)
 
 # Global dashboard reference (optional)
 dashboard = None
 
-def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None, track_metrics: bool = True) -> str:
+def call_ollama(
+    prompt: str,
+    system_prompt: str = "",
+    max_retries: int = None,
+    track_metrics: bool = True,
+    *,
+    context: ProcessingContext = DEFAULT_PROCESSING_CONTEXT,
+) -> str:
     """Call Ollama API with the given prompt and retry logic"""
+    cfg = context.config
+    dashboard = context.dashboard
     if max_retries is None:
-        max_retries = OLLAMA_MAX_RETRIES
+        max_retries = cfg.ollama_max_retries
 
     for attempt in range(max_retries):
         start_time = time.time()
         try:
-            url = f"{OLLAMA_BASE_URL}/api/generate"
+            url = f"{cfg.ollama_base_url}/api/generate"
 
             # Prepare the full prompt
             full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
             payload = {
-                "model": OLLAMA_MODEL,
+                "model": cfg.ollama_model,
                 "prompt": full_prompt,
                 "stream": False,
                 "options": {
-                    "temperature": OLLAMA_TEMPERATURE,  # From config
+                    "temperature": cfg.ollama_temperature,  # From config
                     "top_p": 0.8,        # Slightly lower top_p
                     "top_k": 20,          # Limit vocabulary
                     "repeat_penalty": 1.1, # Prevent repetition
                     "num_ctx": 2048,     # Smaller context window
-                    "num_predict": OLLAMA_MAX_TOKENS,  # From config
+                    "num_predict": cfg.ollama_max_tokens,  # From config
                     "stop": ["```", "\n\n\n"]  # Stop tokens
                 }
             }
 
             # Increase timeout with each retry (for slow local models)
-            timeout = OLLAMA_TIMEOUT + (attempt * 60)  # Base + 1min per retry
+            timeout = cfg.ollama_timeout + (attempt * 60)  # Base + 1min per retry
             
             # Increase timeout with each retry (for complex reasoning)
-            timeout = OLLAMA_TIMEOUT + (attempt * 180)  # Base + 3min per retry for Qwen3:8b reasoning
+            timeout = cfg.ollama_timeout + (attempt * 180)  # Base + 3min per retry for Qwen3:8b reasoning
             response = requests.post(url, json=payload, timeout=timeout)
             response.raise_for_status()
 
@@ -426,7 +468,14 @@ def call_ollama(prompt: str, system_prompt: str = "", max_retries: int = None, t
     return ""
 
 
-def call_claude(prompt: str, system_prompt: str = "", max_retries: int = 3, track_metrics: bool = True) -> str:
+def call_claude(
+    prompt: str,
+    system_prompt: str = "",
+    max_retries: int = 3,
+    track_metrics: bool = True,
+    *,
+    context: ProcessingContext = DEFAULT_PROCESSING_CONTEXT,
+) -> str:
     """
     Call Claude API with the given prompt and retry logic
 
@@ -439,7 +488,8 @@ def call_claude(prompt: str, system_prompt: str = "", max_retries: int = 3, trac
     Returns:
         Claude's response text, or empty string on failure
     """
-    client = _ensure_claude_client()
+    client = _ensure_claude_client(context)
+    dashboard = context.dashboard
     if not client:
         logger.error("❌ Claude client not initialized")
         return ""
@@ -449,14 +499,14 @@ def call_claude(prompt: str, system_prompt: str = "", max_retries: int = 3, trac
         try:
             # Call Claude API
             message = client.messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=CLAUDE_MAX_TOKENS,
-                temperature=CLAUDE_TEMPERATURE,
+                model=context.config.claude_model,
+                max_tokens=context.config.claude_max_tokens,
+                temperature=context.config.claude_temperature,
                 system=system_prompt if system_prompt else "You are a helpful assistant.",
                 messages=[
                     {"role": "user", "content": prompt}
                 ],
-                timeout=CLAUDE_TIMEOUT
+                timeout=context.config.claude_timeout
             )
 
             # Extract response text
@@ -491,7 +541,14 @@ def call_claude(prompt: str, system_prompt: str = "", max_retries: int = 3, trac
     return ""
 
 
-def call_ai_provider(prompt: str, system_prompt: str = "", max_retries: int = None, track_metrics: bool = True) -> str:
+def call_ai_provider(
+    prompt: str,
+    system_prompt: str = "",
+    max_retries: int = None,
+    track_metrics: bool = True,
+    *,
+    context: ProcessingContext = DEFAULT_PROCESSING_CONTEXT,
+) -> str:
     """
     Call the configured AI provider (Ollama or Claude)
 
@@ -507,15 +564,15 @@ def call_ai_provider(prompt: str, system_prompt: str = "", max_retries: int = No
     Returns:
         AI response text, or empty string on failure
     """
-    if AI_PROVIDER == 'claude':
+    if context.ai_provider == 'claude':
         if max_retries is None:
             max_retries = 3  # Claude is fast, fewer retries needed
-        return call_claude(prompt, system_prompt, max_retries, track_metrics)
+        return call_claude(prompt, system_prompt, max_retries, track_metrics, context=context)
     else:
         # Default to Ollama
         if max_retries is None:
-            max_retries = OLLAMA_MAX_RETRIES
-        return call_ollama(prompt, system_prompt, max_retries, track_metrics)
+            max_retries = context.config.ollama_max_retries
+        return call_ollama(prompt, system_prompt, max_retries, track_metrics, context=context)
 
 
 # Analytics tracking
@@ -907,7 +964,11 @@ def fast_dry_run_analysis(content: str, file_path: str) -> Dict[str, Any]:
         'timestamp': datetime.now().isoformat()
     }
 
-def analyze_with_balanced_ai(content: str, existing_notes: Dict[str, str]) -> Optional[Dict]:
+def analyze_with_balanced_ai(
+    content: str,
+    existing_notes: Dict[str, str],
+    context: ProcessingContext = DEFAULT_PROCESSING_CONTEXT,
+) -> Optional[Dict]:
     """Balanced AI analysis with caching"""
 
     # Check cache first
@@ -962,7 +1023,7 @@ Return ONLY the JSON object, no explanations or other text."""
     try:
         # Call configured AI provider (Ollama or Claude)
         system_prompt = "You analyze conversations and create knowledge connections. Return valid JSON only."
-        result_text = call_ai_provider(prompt, system_prompt)
+        result_text = call_ai_provider(prompt, system_prompt, context=context)
 
         if not result_text:
             logger.error(f"❌ Empty response from {AI_PROVIDER.upper()}")
@@ -1532,7 +1593,7 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
 
 def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
     """Enhanced main processing function"""
-    global dashboard
+    global dashboard, claude_client
 
     bootstrap_runtime()
 
@@ -1590,13 +1651,13 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     # Test Ollama connection first
     logger.info("🔍 Testing Ollama connection...")
     logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
-    test_response = call_ollama("Hello", "You are a helpful assistant.")
+    test_response = call_ollama("Hello", "You are a helpful assistant.", context=context)
     
     # Test AI provider connection first
     logger.info(f"🔍 Testing {AI_PROVIDER.upper()} connection...")
     if AI_PROVIDER == 'ollama':
         logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
-    test_response = call_ai_provider("Hello", "You are a helpful assistant.")
+    test_response = call_ai_provider("Hello", "You are a helpful assistant.", context=context)
     if not test_response:
         if AI_PROVIDER == 'claude':
             logger.error("❌ Claude API connection failed. Please check your API key and internet connection.")
