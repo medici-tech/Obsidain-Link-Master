@@ -2,22 +2,33 @@ name: Python CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main, develop, claude/* ]
   pull_request:
-    branches: ["main"]
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  PIP_CACHE_KEY_SUFFIX: ${{ hashFiles('requirements.txt', 'requirements-test.txt') }}
+  COVERAGE_FILE: coverage.xml
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+    env:
+      PYTHON_VERSION: ${{ matrix.python-version }}
     steps:
-      - name: Checkout repo
+      - &checkout
+        name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - &setup-python
+        name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Cache pip
         uses: actions/cache@v4
