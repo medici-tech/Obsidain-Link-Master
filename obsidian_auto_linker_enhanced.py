@@ -38,6 +38,7 @@ from config_utils import (
     ensure_directory_exists,
     get_file_size_category,
     get_file_size_kb,
+    load_yaml_config,
     load_json_file,
     save_json_file,
     validate_vault_path,

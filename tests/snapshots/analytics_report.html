@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Obsidian Auto-Linker Analytics Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .header { background: #f0f0f0; padding: 20px; border-radius: 5px; }
+        .metric { margin: 10px 0; }
+        .chart { background: #f9f9f9; padding: 20px; margin: 20px 0; border-radius: 5px; }
+        .moc-dist { display: flex; flex-wrap: wrap; gap: 10px; }
+        .moc-item { background: #e3f2fd; padding: 10px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Obsidian Auto-Linker Analytics Report</h1>
+        <p>Generated: 2024-01-01 12:00:00</p>
+    </div>
+
+    <div class="chart">
+        <h2>📈 Processing Summary</h2>
+        <div class="metric"><strong>Total Files:</strong> 100</div>
+        <div class="metric"><strong>Processed:</strong> 85</div>
+        <div class="metric"><strong>Skipped:</strong> 10</div>
+        <div class="metric"><strong>Failed:</strong> 5</div>
+        <div class="metric"><strong>Processing Time:</strong> 7200.0 seconds</div>
+        <div class="metric"><strong>Low Confidence Files:</strong> 0</div>
+        <div class="metric"><strong>Review Queue:</strong> 0 files flagged for manual review</div>
+    </div>
+
+    <div class="chart">
+        <h2>🏷️ MOC Distribution</h2>
+        <div class="moc-dist">
+            <div class="moc-item">Business Operations: 20</div><div class="moc-item">Technical & Automation: 30</div><div class="moc-item">Learning & Skills: 15</div><div class="moc-item">Life & Misc: 20</div>
+        </div>
+    </div>
+
+    <div class="chart">
+        <h2>⚡ Performance Metrics</h2>
+        <div class="metric"><strong>Cache Hits:</strong> 45</div>
+        <div class="metric"><strong>Cache Misses:</strong> 40</div>
+        <div class="metric"><strong>Retry Attempts:</strong> 12</div>
+    </div>
+
+    <div class="chart">
+        <h2>❌ Error Summary</h2>
+        <div class="metric"><strong>timeout:</strong> 3</div><div class="metric"><strong>parse_error:</strong> 2</div>
+    </div>
+</body>
+</html>
