@@ -39,12 +39,12 @@ from config_utils import (
     get_file_size_category,
     get_file_size_kb,
     load_json_file,
-    load_yaml_config,
     save_json_file,
     validate_vault_path,
 )
 from live_dashboard import LiveDashboard
 from logger_config import get_logger, setup_logging
+from obsidian_link_master.configuration import DEFAULT_CONFIG, RuntimeConfig, load_runtime_config
 from scripts.cache_utils import BoundedCache, IncrementalTracker
 from scripts.incremental_processing import FileHashTracker, create_hash_tracker
 
@@ -1403,9 +1403,13 @@ def generate_analytics_report() -> None:
     with open(analytics_file, 'w') as f:
         json.dump(analytics, f, indent=2, default=str)
 
-    # Generate HTML report
-    if config.get('generate_report', True):
-        html_report = f"""
+    # Generate HTML report if explicitly requested
+    if not config.get('generate_report', True):
+        logger.info("Skipping HTML analytics report; CLI dashboard already provides live metrics."
+                    " Set generate_report: true to enable HTML output.")
+        return
+
+    html_report = f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -1458,10 +1462,10 @@ def generate_analytics_report() -> None:
 </html>
 """
 
-        with open('analytics_report.html', 'w') as f:
-            f.write(html_report)
+    with open('analytics_report.html', 'w') as f:
+        f.write(html_report)
 
-        logger.info(f"📊 Analytics report saved to: analytics_report.html")
+    logger.info(f"📊 Analytics report saved to: analytics_report.html")
 
 def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_num, total_files, start_time):
     """
@@ -1529,6 +1533,8 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
 def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
     """Enhanced main processing function"""
     global dashboard
+
+    bootstrap_runtime()
 
     # Initialize dashboard if requested
     if enable_dashboard:

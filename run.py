@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Interactive Obsidian Auto-Linker Runner
-Provides easy configuration and process control
+Interactive Obsidian Auto-Linker runner.
+
+This file remains as a compatibility wrapper around the canonical
+``obsidian-link-master`` console script (and ``python -m
+obsidian_link_master``) so existing workflows keep functioning while the
+package entrypoint stays centralized.
 """
 
 import argparse
