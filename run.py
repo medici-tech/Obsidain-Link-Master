@@ -22,8 +22,7 @@ from typing import Optional
 
 import psutil
 
-from config_utils import ensure_directory_exists, validate_vault_path
-from obsidian_link_master.configuration import load_runtime_config
+from config_utils import ensure_directory_exists, load_yaml_config, validate_vault_path
 
 class ObsidianAutoLinker:
     def __init__(self, *, force_dashboard: Optional[bool] = None, auto_confirm: bool = False):
@@ -33,11 +32,10 @@ class ObsidianAutoLinker:
         self.force_dashboard = force_dashboard
         self.enable_dashboard = False
         self.auto_confirm = auto_confirm
-        self.runtime_config = load_runtime_config()
-        self.config = self.runtime_config.__dict__.copy()
+        self.config = load_yaml_config("config.yaml", default={})
         self.default_vault_path = (
             os.environ.get("OBSIDIAN_VAULT_PATH")
-            or self.runtime_config.vault_path
+            or self.config.get("vault_path")
             or str(Path.cwd() / "vault")
         )
         self.resource_stats = {

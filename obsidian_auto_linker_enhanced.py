@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -47,162 +48,240 @@ from obsidian_link_master.configuration import DEFAULT_CONFIG, RuntimeConfig, lo
 from scripts.cache_utils import BoundedCache, IncrementalTracker
 from scripts.incremental_processing import FileHashTracker, create_hash_tracker
 
+DEFAULT_CONFIG = {
+    'vault_path': str(Path('/Users/medici/Documents/MediciVault')),
+    'backup_folder': '_backups',
+    'dry_run': True,
+    'fast_dry_run': False,
+    'force_reprocess': False,
+    'max_backups': 5,
+    'max_siblings': 5,
+    'batch_size': 1,
+    'max_retries': 3,
+    'parallel_processing_enabled': False,
+    'parallel_workers': 1,
+    'file_ordering': 'recent',
+    'resume_enabled': True,
+    'cache_enabled': True,
+    'analytics_enabled': True,
+    'interactive_mode': True,
+    'incremental_processing': True,
+    'incremental': True,
+    'max_cache_size_mb': 1000,
+    'max_cache_entries': 10000,
+    'incremental_tracker_file': '.incremental_tracker.json',
+    'confidence_threshold': 0.8,
+    'enable_review_queue': True,
+    'review_queue_path': 'reviews/',
+    'dry_run_limit': 10,
+    'dry_run_interactive': True,
+    'ollama_base_url': 'http://localhost:11434',
+    'ollama_model': 'qwen3:8b',
+    'ollama_timeout': 300,
+    'ollama_max_retries': 5,
+    'ollama_temperature': 0.1,
+    'ollama_max_tokens': 1024,
+    'ai_provider': 'ollama',
+    'claude_model': 'claude-sonnet-4-5-20250929',
+    'claude_max_tokens': 2048,
+    'claude_temperature': 0.1,
+    'claude_timeout': 60,
+}
+
+
+@dataclass
+class RuntimeConfig:
+    """Normalized runtime configuration loaded from disk and environment."""
+
+    vault_path: str
+    backup_folder: str
+    dry_run: bool
+    fast_dry_run: bool
+    force_reprocess: bool
+    max_backups: int
+    max_siblings: int
+    batch_size: int
+    max_retries: int
+    parallel_processing_enabled: bool
+    parallel_workers: int
+    file_ordering: str
+    resume_enabled: bool
+    cache_enabled: bool
+    analytics_enabled: bool
+    interactive_mode: bool
+    incremental_processing: bool
+    incremental: bool
+    max_cache_size_mb: int
+    max_cache_entries: int
+    incremental_tracker_file: str
+    confidence_threshold: float
+    enable_review_queue: bool
+    review_queue_path: str
+    dry_run_limit: int
+    dry_run_interactive: bool
+    ollama_base_url: str
+    ollama_model: str
+    ollama_timeout: int
+    ollama_max_retries: int
+    ollama_temperature: float
+    ollama_max_tokens: int
+    ai_provider: str
+    claude_api_key: str
+    claude_model: str
+    claude_max_tokens: int
+    claude_temperature: float
+    claude_timeout: int
+
+
+def _load_runtime_config(config_path: str = 'config.yaml') -> RuntimeConfig:
+    """Load configuration from disk with sane defaults and validation."""
+
+    logger = get_logger(__name__)
+    raw_config = {**DEFAULT_CONFIG, **load_yaml_config(config_path, default={})}
+
+    vault_path = os.environ.get('OBSIDIAN_VAULT_PATH') or raw_config.get('vault_path')
+    if not vault_path:
+        vault_path = DEFAULT_CONFIG['vault_path']
+
+    if not validate_vault_path(vault_path, must_exist=False):
+        fallback = DEFAULT_CONFIG['vault_path']
+        logger.warning(
+            "Invalid vault path '%s'. Falling back to %s."
+            " Set OBSIDIAN_VAULT_PATH or update config.yaml to override.",
+            vault_path,
+            fallback,
+        )
+        vault_path = fallback
+
+    ensure_directory_exists(vault_path, create=True)
+    backup_folder = os.path.join(vault_path, raw_config.get('backup_folder', DEFAULT_CONFIG['backup_folder']))
+
+    return RuntimeConfig(
+        vault_path=vault_path,
+        backup_folder=backup_folder,
+        dry_run=bool(raw_config['dry_run']),
+        fast_dry_run=bool(raw_config['fast_dry_run']),
+        force_reprocess=bool(raw_config['force_reprocess']),
+        max_backups=int(raw_config['max_backups']),
+        max_siblings=int(raw_config['max_siblings']),
+        batch_size=int(raw_config['batch_size']),
+        max_retries=int(raw_config['max_retries']),
+        parallel_processing_enabled=bool(raw_config['parallel_processing_enabled']),
+        parallel_workers=int(raw_config['parallel_workers']),
+        file_ordering=str(raw_config['file_ordering']),
+        resume_enabled=bool(raw_config['resume_enabled']),
+        cache_enabled=bool(raw_config['cache_enabled']),
+        analytics_enabled=bool(raw_config['analytics_enabled']),
+        interactive_mode=bool(raw_config['interactive_mode']),
+        incremental_processing=bool(raw_config['incremental_processing']),
+        incremental=bool(raw_config['incremental']),
+        max_cache_size_mb=int(raw_config['max_cache_size_mb']),
+        max_cache_entries=int(raw_config['max_cache_entries']),
+        incremental_tracker_file=str(raw_config['incremental_tracker_file']),
+        confidence_threshold=float(raw_config['confidence_threshold']),
+        enable_review_queue=bool(raw_config['enable_review_queue']),
+        review_queue_path=str(raw_config['review_queue_path']),
+        dry_run_limit=int(raw_config['dry_run_limit']),
+        dry_run_interactive=bool(raw_config['dry_run_interactive']),
+        ollama_base_url=str(raw_config['ollama_base_url']),
+        ollama_model=str(raw_config['ollama_model']),
+        ollama_timeout=int(raw_config['ollama_timeout']),
+        ollama_max_retries=int(raw_config['ollama_max_retries']),
+        ollama_temperature=float(raw_config['ollama_temperature']),
+        ollama_max_tokens=int(raw_config['ollama_max_tokens']),
+        ai_provider=str(raw_config['ai_provider']).lower(),
+        claude_api_key=raw_config.get('claude_api_key') or os.environ.get('ANTHROPIC_API_KEY', ''),
+        claude_model=str(raw_config['claude_model']),
+        claude_max_tokens=int(raw_config['claude_max_tokens']),
+        claude_temperature=float(raw_config['claude_temperature']),
+        claude_timeout=int(raw_config['claude_timeout']),
+    )
 
 
 # Initialize logger
 logger = get_logger(__name__)
 
-# Runtime values are populated lazily by ``bootstrap_runtime`` to avoid
-# performing file I/O or provider selection at import time. This keeps module
-# import side-effect free and easier to test.
-runtime_config: RuntimeConfig | None = None
-config: Dict[str, Any] = {}
+# Load and normalize configuration once for the module
+runtime_config = _load_runtime_config()
+config: Dict[str, Any] = runtime_config.__dict__.copy()
 
-VAULT_PATH = DEFAULT_CONFIG["vault_path"]
-BACKUP_FOLDER = DEFAULT_CONFIG["backup_folder"]
-DRY_RUN = bool(DEFAULT_CONFIG["dry_run"])
-FAST_DRY_RUN = bool(DEFAULT_CONFIG["fast_dry_run"])
-MAX_BACKUPS = int(DEFAULT_CONFIG["max_backups"])
-MAX_SIBLINGS = int(DEFAULT_CONFIG["max_siblings"])
-BATCH_SIZE = int(DEFAULT_CONFIG["batch_size"])
-MAX_RETRIES = int(DEFAULT_CONFIG["max_retries"])
-PARALLEL_PROCESSING_ENABLED = bool(DEFAULT_CONFIG["parallel_processing_enabled"])
-PARALLEL_WORKERS = int(DEFAULT_CONFIG["parallel_workers"])
+VAULT_PATH = runtime_config.vault_path
+BACKUP_FOLDER = runtime_config.backup_folder
+DRY_RUN = runtime_config.dry_run
+FAST_DRY_RUN = runtime_config.fast_dry_run
+MAX_BACKUPS = runtime_config.max_backups
+MAX_SIBLINGS = runtime_config.max_siblings
+BATCH_SIZE = runtime_config.batch_size
+MAX_RETRIES = runtime_config.max_retries
+PARALLEL_PROCESSING_ENABLED = runtime_config.parallel_processing_enabled
+PARALLEL_WORKERS = runtime_config.parallel_workers
 REQUESTED_PARALLEL_WORKERS = PARALLEL_WORKERS
 
-FILE_ORDERING = str(DEFAULT_CONFIG["file_ordering"])
-RESUME_ENABLED = bool(DEFAULT_CONFIG["resume_enabled"])
-CACHE_ENABLED = bool(DEFAULT_CONFIG["cache_enabled"])
-INCREMENTAL_PROCESSING = bool(DEFAULT_CONFIG["incremental_processing"])
-FORCE_REPROCESS = bool(DEFAULT_CONFIG["force_reprocess"])
-INTERACTIVE_MODE = bool(DEFAULT_CONFIG["interactive_mode"])
-ANALYTICS_ENABLED = bool(DEFAULT_CONFIG["analytics_enabled"])
+# Parallel processing configuration
+if not PARALLEL_PROCESSING_ENABLED:
+    if PARALLEL_WORKERS > 1:
+        logger.info(
+            "parallel_processing_enabled is False; ignoring parallel_workers=%s and running sequentially",
+            PARALLEL_WORKERS,
+        )
+    PARALLEL_WORKERS = 1
+else:
+    if PARALLEL_WORKERS > 1:
+        logger.info("✅ Parallel processing enabled: using %s workers", PARALLEL_WORKERS)
+    else:
+        logger.info("Parallel processing enabled but configured for a single worker")
 
-MAX_CACHE_SIZE_MB = int(DEFAULT_CONFIG["max_cache_size_mb"])
-MAX_CACHE_ENTRIES = int(DEFAULT_CONFIG["max_cache_entries"])
+FILE_ORDERING = runtime_config.file_ordering
+RESUME_ENABLED = runtime_config.resume_enabled
+CACHE_ENABLED = runtime_config.cache_enabled
+INCREMENTAL_PROCESSING = runtime_config.incremental_processing
+FORCE_REPROCESS = runtime_config.force_reprocess
+INTERACTIVE_MODE = runtime_config.interactive_mode
+ANALYTICS_ENABLED = runtime_config.analytics_enabled
 
-INCREMENTAL_ENABLED = bool(DEFAULT_CONFIG["incremental"])
-INCREMENTAL_TRACKER_FILE = str(DEFAULT_CONFIG["incremental_tracker_file"])
-CONFIDENCE_THRESHOLD = float(DEFAULT_CONFIG["confidence_threshold"])
-ENABLE_REVIEW_QUEUE = bool(DEFAULT_CONFIG["enable_review_queue"])
-REVIEW_QUEUE_PATH = str(DEFAULT_CONFIG["review_queue_path"])
+# Cache configuration
+MAX_CACHE_SIZE_MB = runtime_config.max_cache_size_mb
+MAX_CACHE_ENTRIES = runtime_config.max_cache_entries
 
-DRY_RUN_LIMIT = int(DEFAULT_CONFIG["dry_run_limit"])
-DRY_RUN_INTERACTIVE = bool(DEFAULT_CONFIG["dry_run_interactive"])
+# Incremental processing configuration (enabled by default for performance)
+INCREMENTAL_ENABLED = runtime_config.incremental  # Default: True for 90% faster reruns
+INCREMENTAL_TRACKER_FILE = runtime_config.incremental_tracker_file
+if INCREMENTAL_ENABLED:
+    logger.info("✅ Incremental processing enabled (skips unchanged files for 90% faster reruns)")
+# Quality control settings
+CONFIDENCE_THRESHOLD = runtime_config.confidence_threshold
+ENABLE_REVIEW_QUEUE = runtime_config.enable_review_queue
+REVIEW_QUEUE_PATH = runtime_config.review_queue_path
 
-OLLAMA_BASE_URL = str(DEFAULT_CONFIG["ollama_base_url"])
-OLLAMA_MODEL = str(DEFAULT_CONFIG["ollama_model"])
-OLLAMA_TIMEOUT = int(DEFAULT_CONFIG["ollama_timeout"])
-OLLAMA_MAX_RETRIES = int(DEFAULT_CONFIG["ollama_max_retries"])
-OLLAMA_TEMPERATURE = float(DEFAULT_CONFIG["ollama_temperature"])
-OLLAMA_MAX_TOKENS = int(DEFAULT_CONFIG["ollama_max_tokens"])
+# Dry run settings
+DRY_RUN_LIMIT = runtime_config.dry_run_limit
+DRY_RUN_INTERACTIVE = runtime_config.dry_run_interactive
 
-AI_PROVIDER = str(DEFAULT_CONFIG["ai_provider"])
-CLAUDE_API_KEY = ""
-CLAUDE_MODEL = str(DEFAULT_CONFIG["claude_model"])
-CLAUDE_MAX_TOKENS = int(DEFAULT_CONFIG["claude_max_tokens"])
-CLAUDE_TEMPERATURE = float(DEFAULT_CONFIG["claude_temperature"])
-CLAUDE_TIMEOUT = int(DEFAULT_CONFIG["claude_timeout"])
+# Ollama configuration
+OLLAMA_BASE_URL = runtime_config.ollama_base_url
+OLLAMA_MODEL = runtime_config.ollama_model
+OLLAMA_TIMEOUT = runtime_config.ollama_timeout  # Default 5 minutes for Qwen3:8b
+OLLAMA_MAX_RETRIES = runtime_config.ollama_max_retries  # More retries for complex reasoning
+OLLAMA_TEMPERATURE = runtime_config.ollama_temperature
+# Fully implemented call_ollama defined after provider configuration
+OLLAMA_MAX_TOKENS = runtime_config.ollama_max_tokens  # More tokens for detailed responses
+
+# AI Provider selection (ollama or claude)
+AI_PROVIDER = runtime_config.ai_provider
+
+# Claude API configuration (only used if ai_provider: claude)
+CLAUDE_API_KEY = runtime_config.claude_api_key
+CLAUDE_MODEL = runtime_config.claude_model
+CLAUDE_MAX_TOKENS = runtime_config.claude_max_tokens
+CLAUDE_TEMPERATURE = runtime_config.claude_temperature
+CLAUDE_TIMEOUT = runtime_config.claude_timeout
 
 # Initialize Claude client lazily
 claude_client = None
 
 
-def bootstrap_runtime(config_path: str = "config.yaml") -> RuntimeConfig:
-    """Populate module-level runtime settings exactly once.
-
-    Loading runtime state on-demand keeps imports lightweight and allows tests
-    to override configuration paths. The initialized values mirror the previous
-    global defaults while centralizing the validation and logging in a single
-    place.
-    """
-
-    global runtime_config, config, VAULT_PATH, BACKUP_FOLDER, DRY_RUN, FAST_DRY_RUN
-    global MAX_BACKUPS, MAX_SIBLINGS, BATCH_SIZE, MAX_RETRIES, PARALLEL_PROCESSING_ENABLED
-    global PARALLEL_WORKERS, REQUESTED_PARALLEL_WORKERS, FILE_ORDERING, RESUME_ENABLED
-    global CACHE_ENABLED, INCREMENTAL_PROCESSING, FORCE_REPROCESS, INTERACTIVE_MODE
-    global ANALYTICS_ENABLED, MAX_CACHE_SIZE_MB, MAX_CACHE_ENTRIES, INCREMENTAL_ENABLED
-    global INCREMENTAL_TRACKER_FILE, CONFIDENCE_THRESHOLD, ENABLE_REVIEW_QUEUE
-    global REVIEW_QUEUE_PATH, DRY_RUN_LIMIT, DRY_RUN_INTERACTIVE, OLLAMA_BASE_URL
-    global OLLAMA_MODEL, OLLAMA_TIMEOUT, OLLAMA_MAX_RETRIES, OLLAMA_TEMPERATURE
-    global OLLAMA_MAX_TOKENS, AI_PROVIDER, CLAUDE_API_KEY, CLAUDE_MODEL
-    global CLAUDE_MAX_TOKENS, CLAUDE_TEMPERATURE, CLAUDE_TIMEOUT
-
-    if runtime_config:
-        return runtime_config
-
-    runtime_config = load_runtime_config(config_path)
-    config = runtime_config.__dict__.copy()
-
-    VAULT_PATH = runtime_config.vault_path
-    BACKUP_FOLDER = runtime_config.backup_folder
-    DRY_RUN = runtime_config.dry_run
-    FAST_DRY_RUN = runtime_config.fast_dry_run
-    MAX_BACKUPS = runtime_config.max_backups
-    MAX_SIBLINGS = runtime_config.max_siblings
-    BATCH_SIZE = runtime_config.batch_size
-    MAX_RETRIES = runtime_config.max_retries
-    PARALLEL_PROCESSING_ENABLED = runtime_config.parallel_processing_enabled
-    PARALLEL_WORKERS = runtime_config.parallel_workers
-    REQUESTED_PARALLEL_WORKERS = PARALLEL_WORKERS
-
-    if not PARALLEL_PROCESSING_ENABLED:
-        if PARALLEL_WORKERS > 1:
-            logger.info(
-                "parallel_processing_enabled is False; ignoring parallel_workers=%s and running sequentially",
-                PARALLEL_WORKERS,
-            )
-        PARALLEL_WORKERS = 1
-    else:
-        if PARALLEL_WORKERS > 1:
-            logger.info("✅ Parallel processing enabled: using %s workers", PARALLEL_WORKERS)
-        else:
-            logger.info("Parallel processing enabled but configured for a single worker")
-
-    FILE_ORDERING = runtime_config.file_ordering
-    RESUME_ENABLED = runtime_config.resume_enabled
-    CACHE_ENABLED = runtime_config.cache_enabled
-    INCREMENTAL_PROCESSING = runtime_config.incremental_processing
-    FORCE_REPROCESS = runtime_config.force_reprocess
-    INTERACTIVE_MODE = runtime_config.interactive_mode
-    ANALYTICS_ENABLED = runtime_config.analytics_enabled
-
-    MAX_CACHE_SIZE_MB = runtime_config.max_cache_size_mb
-    MAX_CACHE_ENTRIES = runtime_config.max_cache_entries
-
-    INCREMENTAL_ENABLED = runtime_config.incremental
-    INCREMENTAL_TRACKER_FILE = runtime_config.incremental_tracker_file
-    if INCREMENTAL_ENABLED:
-        logger.info("✅ Incremental processing enabled (skips unchanged files for 90% faster reruns)")
-
-    CONFIDENCE_THRESHOLD = runtime_config.confidence_threshold
-    ENABLE_REVIEW_QUEUE = runtime_config.enable_review_queue
-    REVIEW_QUEUE_PATH = runtime_config.review_queue_path
-
-    DRY_RUN_LIMIT = runtime_config.dry_run_limit
-    DRY_RUN_INTERACTIVE = runtime_config.dry_run_interactive
-
-    OLLAMA_BASE_URL = runtime_config.ollama_base_url
-    OLLAMA_MODEL = runtime_config.ollama_model
-    OLLAMA_TIMEOUT = runtime_config.ollama_timeout
-    OLLAMA_MAX_RETRIES = runtime_config.ollama_max_retries
-    OLLAMA_TEMPERATURE = runtime_config.ollama_temperature
-    OLLAMA_MAX_TOKENS = runtime_config.ollama_max_tokens
-
-    AI_PROVIDER = runtime_config.ai_provider
-    CLAUDE_API_KEY = runtime_config.claude_api_key
-    CLAUDE_MODEL = runtime_config.claude_model
-    CLAUDE_MAX_TOKENS = runtime_config.claude_max_tokens
-    CLAUDE_TEMPERATURE = runtime_config.claude_temperature
-    CLAUDE_TIMEOUT = runtime_config.claude_timeout
-
-    return runtime_config
-
-
 def _resolve_ai_provider() -> str:
     """Determine the active AI provider with validation and fallbacks."""
-
-    bootstrap_runtime()
 
     provider = AI_PROVIDER
     if provider != 'claude':
@@ -224,8 +303,6 @@ def _resolve_ai_provider() -> str:
 
 def _ensure_claude_client():
     """Create a Claude client only when the provider is enabled and configured."""
-
-    bootstrap_runtime()
 
     global claude_client
     if claude_client:
