@@ -2,34 +2,65 @@ name: Python CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main, develop, claude/* ]
   pull_request:
-    branches: ["main"]
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  PIP_CACHE_KEY_SUFFIX: ${{ hashFiles('requirements.txt', 'requirements-test.txt') }}
+  COVERAGE_FILE: coverage.xml
 
 jobs:
-  test:
+  build-test:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+    env:
+      PYTHON_VERSION: ${{ matrix.python-version }}
     steps:
-      - name: Checkout repo
+      - &checkout
+        name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - &setup-python
+        name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml', 'requirements.txt', 'requirements-test.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
-          pip install -r requirements-test.txt || true
-          pip install pytest
-
-      - name: Run tests
-        run: pytest -v
+          pip install -e .[dev]
 
       - name: Lint with ruff
+        run: ruff check .
+
+      - name: Run tests with coverage
         run: |
-          pip install ruff
-          ruff check .
+          pytest -v --cov=. --cov-report=xml --cov-report=term
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      - name: Build package
+        run: python -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-packages
+          path: dist
