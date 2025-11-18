@@ -18,6 +18,7 @@ An intelligent AI-powered system for automatically categorizing and linking Obsi
 | **[ROADMAP.md](ROADMAP.md)** | Development roadmap (24KB) |
 | **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** | Problem solving (17KB) |
 | **[COMPREHENSIVE_REVIEW.md](COMPREHENSIVE_REVIEW.md)** | Project review |
+| **[CHANGELOG.md](CHANGELOG.md)** | Release notes |
 | **[configs/](configs/)** | Configuration examples |
 | **[tests/](tests/)** | Test suite (291+ tests) |
 
@@ -62,7 +63,7 @@ git clone <repository-url>
 cd Obsidian-Link-Master
 ```
 
-### 2. Install Dependencies
+### 2. Install Dependencies (development checkout)
 ```bash
 # Create virtual environment
 python3 -m venv venv
@@ -70,6 +71,35 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install requirements
 pip install -r requirements.txt
+```
+
+### 2b. Install as a package with the CLI entrypoint (recommended)
+```bash
+pip install -e .[dev]
+
+# Preferred entrypoint (also available via ``python -m obsidian_link_master``)
+# One command to set defaults and launch the live dashboard
+obsidian-link-master --non-interactive --dashboard
+
+# Legacy wrappers ``run.py`` and ``run_with_dashboard.py`` delegate to the
+# same CLI for compatibility, but the console script above is the canonical
+# way to launch the tool.
+
+# HTML analytics are disabled by default because the live dashboard shows the
+# same metrics; set ``generate_report: true`` in ``config.yaml`` only if you
+# need a richer standalone HTML report.
+```
+
+### 2c. Use the packaged CLI after installation
+Once installed (editable or from a built wheel), you can invoke the tool from
+anywhere without referencing repository paths:
+
+```bash
+# Uses the packaged configuration loader and runtime bootstrap
+obsidian-link-master --config config.yaml --non-interactive
+
+# Or via the module entrypoint
+python -m obsidian_link_master --config config.yaml
 ```
 
 ### 3. Install and Setup Ollama
