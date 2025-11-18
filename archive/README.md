@@ -10,31 +10,22 @@ These files were experimental implementations or duplicates created during devel
 
 ## 📂 experimental_runners/
 
-**Purpose**: Experimental parallel processing and timeout handling implementations
+**Purpose**: Legacy wrappers for specialized runs that pre-date the unified launcher.
 
-### Parallel Processing Variants
-
-- `run_parallel.py` - Early parallel processing attempt
-- `run_parallel_real.py` - Second iteration
-- `run_parallel_fixed.py` - Bug fix attempt
-- `run_parallel_fast.py` - Performance optimization attempt
-- `run_parallel_timeout.py` - Timeout handling variant
-- `run_parallel_working.py` - "Working" version (outdated)
-- `run_parallel_optimized.sh` - Shell script wrapper
-
-**Status**: Parallel processing is planned but not yet implemented in the main codebase. See PHASE_2_3_STATUS.md for implementation roadmap.
-
-**Canonical Implementation**: Use `run.py` (interactive) or `run_with_dashboard.py` (with monitoring)
-
-### Specialized Runners
+### Specialized Runners (still available)
 
 - `run_extended_timeout.py` - Extended timeout configuration
 - `run_ultra_detailed.py` - Ultra-detailed analytics mode
 - `run_detailed_analytics.py` - Detailed analytics runner
 
-**Status**: Functionality merged into `run.py` with config options
+**Status**: Functionality has been merged into `run.py` via configuration options. These scripts are kept only as reference wrappers.
 
-**Canonical Implementation**: Use `run.py` with appropriate config.yaml settings
+**Canonical Implementation**: Use `run.py` (interactive) or `run_with_dashboard.py` (with monitoring)
+
+### Removed Parallel Prototypes (2025-11-26)
+
+Legacy parallel runner prototypes were deleted to reduce bloat and avoid confusion. Parallel execution is now handled directly in
+`obsidian_auto_linker_enhanced.py` via configuration flags (`parallel_processing_enabled`, `parallel_workers`).
 
 ---
 
@@ -43,7 +34,6 @@ These files were experimental implementations or duplicates created during devel
 **Purpose**: Test files that were in root directory during development
 
 - `test_parallel_simple.py` - Simple parallel processing test
-- `test_sequential_2_files.py` - Sequential processing test
 - `test_integration.py` - Integration test (may be duplicate)
 
 **Status**: Experimental tests, may have duplicates in tests/ directory
@@ -79,10 +69,10 @@ git commit -m "Restore filename.py from archive"
 
 ## 📊 Archive Statistics
 
-- **Files Archived**: 10 scripts
-- **Archive Date**: 2025-11-15
-- **Disk Space Saved**: ~150KB
-- **Maintainability Improvement**: Huge (root directory cleanup)
+- **Files Archived**: 3 specialized runners + 2 experimental tests (reference only)
+- **Archive Date**: 2025-11-15 (parallel prototypes removed 2025-11-26)
+- **Disk Space Saved**: Significant after deleting legacy parallel prototypes (multiple hundred KB)
+- **Maintainability Improvement**: Huge (root directory cleanup, reduced parallel runner confusion)
 
 ---
 

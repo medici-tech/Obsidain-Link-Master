@@ -65,7 +65,9 @@ Successfully completed all **Phase 1 critical cleanup tasks** identified in COMP
 **Files Moved**:
 - `test_integration.py` (duplicate, canonical version in tests/)
 - `test_parallel_simple.py`
-- `test_sequential_2_files.py`
+
+**Removed**:
+- `test_sequential_2_files.py` (redundant; deleted during parallel runner cleanup)
 
 **Impact**: Clean root structure, clear test organization
 
@@ -76,8 +78,8 @@ Successfully completed all **Phase 1 critical cleanup tasks** identified in COMP
 **Problem**: `config_default_extended.yaml` marked for deletion in TODO
 
 **Solution**:
-- Moved to `configs/deprecated/config_default_extended.yaml`
-- Added `configs/deprecated/README.md` with migration instructions
+- Removed `config_default_extended.yaml` entirely (2025-11-26)
+- Updated `configs/deprecated/README.md` with migration instructions
 
 **Migration Path**: Users directed to use:
 - `configs/config_hybrid_models.yaml`
