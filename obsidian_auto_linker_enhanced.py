@@ -38,6 +38,7 @@ from config_utils import (
     ensure_directory_exists,
     get_file_size_category,
     get_file_size_kb,
+    load_yaml_config,
     load_json_file,
     save_json_file,
     validate_vault_path,
@@ -76,7 +77,7 @@ DEFAULT_CONFIG = {
     'dry_run_limit': 10,
     'dry_run_interactive': True,
     'ollama_base_url': 'http://localhost:11434',
-    'ollama_model': 'qwen3:8b',
+    'ollama_model': 'Qwen3-Embedding-8B:Q8_0',
     'ollama_timeout': 300,
     'ollama_max_retries': 5,
     'ollama_temperature': 0.1,
@@ -210,6 +211,10 @@ class ProcessingContext:
 
 # Initialize logger
 logger = get_logger(__name__)
+
+# Bootstrap guard to avoid double initialization when run via multiple entrypoints
+_BOOTSTRAPPED = False
+_BOOTSTRAP_LOCK = threading.Lock()
 
 # Load and normalize configuration once for the module
 runtime_config = _load_runtime_config()
@@ -1591,16 +1596,57 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
         return (file_path, False, f'error: {e}', threading.current_thread().name)
 
 
-def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
+def bootstrap_runtime(log_level: str = "INFO") -> RuntimeConfig:
+    """Initialize logging and one-time runtime settings.
+
+    This keeps the legacy runner compatible with the packaged CLI by
+    ensuring logging is configured and configuration is loaded exactly
+    once, even if multiple entrypoints call into this module.
+    """
+
+    global _BOOTSTRAPPED
+
+    if _BOOTSTRAPPED:
+        return runtime_config
+
+    with _BOOTSTRAP_LOCK:
+        if not _BOOTSTRAPPED:
+            setup_logging(log_level=log_level)
+            logger.info(
+                "Runtime bootstrap complete (vault=%s, parallel=%s, dashboard=%s)",
+                VAULT_PATH,
+                PARALLEL_PROCESSING_ENABLED,
+                False,
+            )
+            _BOOTSTRAPPED = True
+
+    return runtime_config
+
+
+def main(
+    *,
+    enable_dashboard: bool = False,
+    dashboard_update_interval: int = 15,
+    testing_mode: bool = False,
+) -> None:
     """Enhanced main processing function"""
     global dashboard, claude_client
 
-    bootstrap_runtime()
+    # Ensure a context always exists, even if bootstrapping fails early.
+    active_context: ProcessingContext = DEFAULT_PROCESSING_CONTEXT
 
-    # Initialize dashboard if requested
-    if enable_dashboard:
-        dashboard = LiveDashboard(update_interval=dashboard_update_interval)
-        dashboard.start()
+    try:
+        runtime_cfg = bootstrap_runtime()
+        active_context = create_processing_context(
+            enable_dashboard=enable_dashboard,
+            dashboard_update_interval=dashboard_update_interval,
+            config_obj=runtime_cfg,
+        )
+    except Exception:
+        logger.exception("Failed to initialize processing context; using default context as fallback")
+
+    context: ProcessingContext = active_context
+    dashboard = context.dashboard
 
     logger.info("=" * 60)
     logger.info("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
@@ -1652,7 +1698,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info("🔍 Testing Ollama connection...")
     logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
     test_response = call_ollama("Hello", "You are a helpful assistant.", context=context)
-    
+
     # Test AI provider connection first
     logger.info(f"🔍 Testing {AI_PROVIDER.upper()} connection...")
     if AI_PROVIDER == 'ollama':
@@ -1675,6 +1721,10 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         logger.info(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
         logger.info(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
         logger.info(f"   🧠 Extended timeouts prevent reasoning interruptions")
+
+    if testing_mode:
+        logger.info("Testing mode enabled – exiting after provider connectivity checks")
+        return
 
         if AI_PROVIDER == 'claude':
             logger.info(f"✅ Claude API connection successful")

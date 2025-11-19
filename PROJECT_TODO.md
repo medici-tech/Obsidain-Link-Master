@@ -32,9 +32,9 @@
 *(No tasks currently in progress)*
 
 #### 📝 Planned - Priority 3
-- [ ] Property-based tests with Hypothesis
-- [ ] Mutation testing with mutmut
-- [ ] Snapshot testing for reports
+- [x] Property-based tests with Hypothesis
+- [x] Mutation testing with mutmut
+- [x] Snapshot testing for reports
 - [ ] Contract tests for API interactions
 
 ---
@@ -53,13 +53,14 @@
 - [x] Keep only main launcher scripts in root
 - [x] Verified all config files usage status
 - [x] Documented unused/deprecated config files
+- [x] Removed deprecated config_default_extended.yaml (cleaned deprecated presets)
+- [x] Deleted legacy parallel runner prototypes from archive
 
 #### 🔄 In Progress
 *(No tasks currently in progress)*
 
 #### 📝 To Do
 - [ ] Create proper script categories (README for scripts/)
-- [ ] Remove deprecated config_default_extended.yaml
 
 ### Code Quality
 
