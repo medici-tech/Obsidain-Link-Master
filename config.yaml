@@ -4,6 +4,8 @@ dry_run: True
 fast_dry_run: True
 file_ordering: 'recent'
 ollama_base_url: http://localhost:11434
-ollama_model: qwen2.5:3b
+ollama_model: Qwen3-Embedding-8B:Q8_0
 vault_path: /Users/medici/Documents/MediciVault
 generate_report: false
+parallel_processing_enabled: false
+parallel_workers: 1

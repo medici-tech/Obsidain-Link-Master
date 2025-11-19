@@ -393,7 +393,7 @@ File System Structure:
 ├── config_qwen3_maximum_detail.yaml # Maximum quality preset
 ├── config_extended_timeout.yaml     # Extended timeout preset
 ├── config_hybrid_models.yaml        # Hybrid mode preset
-└── config_default_extended.yaml     # [DEPRECATED]
+└── config_macbook_air_16gb.yaml     # MacBook Air preset
 ```
 
 ### Test Directory
