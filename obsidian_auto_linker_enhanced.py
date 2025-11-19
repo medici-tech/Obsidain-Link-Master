@@ -1627,9 +1627,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     """Enhanced main processing function"""
     global dashboard, claude_client
 
-    # Ensure a context always exists, even if bootstrapping fails early.
-    context: ProcessingContext = DEFAULT_PROCESSING_CONTEXT
-
     runtime_cfg = bootstrap_runtime()
     context = create_processing_context(
         enable_dashboard=enable_dashboard,
