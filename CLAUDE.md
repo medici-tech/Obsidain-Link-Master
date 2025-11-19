@@ -214,8 +214,8 @@ Overall:              ⭐⭐⭐⭐⭐ (5/5) - EXCELLENT
 │   └── USAGE.md                         # Usage examples (2KB)
 │
 ├── 📁 Archive (Experimental/deprecated files)
-│   ├── experimental_runners/            # Old runner scripts (10 files)
-│   ├── experimental_tests/              # Old test files (3 files)
+│   ├── experimental_runners/            # Old runner scripts (3 reference wrappers)
+│   ├── experimental_tests/              # Old test files (2 files)
 │   ├── old_docs/                        # Archived documentation
 │   └── README.md                        # Archive documentation
 │
