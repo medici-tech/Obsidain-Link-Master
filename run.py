@@ -307,7 +307,52 @@ class ObsidianAutoLinker:
             else:
                 print("   ❌ Invalid choice. Please enter 1-2")
 
-    def update_config(self, vault_path, file_ordering, processing_mode, batch_size):
+    def get_parallel_workers(self):
+        """Ask user how many parallel workers to run with."""
+        current_enabled = bool(self.config.get("parallel_processing_enabled", False))
+        current_workers = int(self.config.get("parallel_workers", 1))
+
+        print("\n🧵 Parallel Processing:")
+        print("   Enter number of workers (1 = sequential, higher = parallel).")
+        print("   Default from config: {} worker(s) ({}).".format(
+            current_workers,
+            "enabled" if current_enabled and current_workers > 1 else "sequential",
+        ))
+
+        while True:
+            if self.auto_confirm:
+                choice = str(current_workers)
+                print(f"   Auto-selecting workers: {choice}")
+            else:
+                try:
+                    choice = input("   Workers (default={}): ".format(current_workers)).strip()
+                except EOFError:
+                    choice = str(current_workers)
+                    print(f"   Using default: {choice}")
+
+            if not choice:
+                workers = current_workers
+            else:
+                if not choice.isdigit():
+                    print("   ❌ Please enter a positive integer")
+                    continue
+                workers = int(choice)
+                if workers < 1:
+                    print("   ❌ Workers must be at least 1")
+                    continue
+
+            enable_parallel = workers > 1
+            return enable_parallel, workers
+
+    def update_config(
+        self,
+        vault_path,
+        file_ordering,
+        processing_mode,
+        batch_size,
+        parallel_enabled,
+        parallel_workers,
+    ):
         """Update config.yaml with user choices"""
         # Convert processing mode to config values
         if processing_mode == "fast_dry":
@@ -326,7 +371,9 @@ dry_run: {dry_run}
 fast_dry_run: {fast_dry_run}
 file_ordering: '{file_ordering}'
 ollama_base_url: http://localhost:11434
-ollama_model: qwen2.5:3b
+ollama_model: Qwen3-Embedding-8B:Q8_0
+parallel_processing_enabled: {parallel_enabled}
+parallel_workers: {parallel_workers}
 vault_path: {vault_path}
 """
 
@@ -498,6 +545,7 @@ vault_path: {vault_path}
         processing_mode = self.get_processing_mode()
         batch_size = self.get_batch_size()
         enable_dashboard = self.get_dashboard_preference()
+        parallel_enabled, parallel_workers = self.get_parallel_workers()
 
         # Store dashboard preference
         self.enable_dashboard = enable_dashboard
@@ -516,6 +564,12 @@ vault_path: {vault_path}
         print(f"   📦 Batch: {batch_size} file(s) at a time")
 
         print(f"   📊 Dashboard: {'Enabled' if enable_dashboard else 'Disabled'}")
+        print(
+            "   🧵 Parallel: {} (workers: {})".format(
+                "Enabled" if parallel_enabled else "Sequential",
+                parallel_workers,
+            )
+        )
         
         # Confirm before running
         print("\n⚠️  Ready to start processing")
@@ -542,7 +596,14 @@ vault_path: {vault_path}
             return
 
         # Update config and run
-        self.update_config(vault_path, file_ordering, processing_mode, batch_size)
+        self.update_config(
+            vault_path,
+            file_ordering,
+            processing_mode,
+            batch_size,
+            parallel_enabled,
+            parallel_workers,
+        )
         self.run_processing()
 
 def parse_args(argv=None):
