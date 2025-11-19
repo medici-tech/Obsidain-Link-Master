@@ -94,7 +94,7 @@ After refactoring: ⭐⭐⭐⭐⭐ (Excellent - 5/5)
 | `configs/config_hybrid_models.yaml` | Hybrid model selection | ⚠️ **DEPRECATE** | → production |
 | `configs/config_parallel_optimized.yaml` | Parallel optimization | ⚠️ **DEPRECATE** | → production |
 | `configs/config_parallel_timeout.yaml` | Used by parallel.py | ❌ **DEPRECATE** | → deprecated/ |
-| `configs/deprecated/config_default_extended.yaml` | Old default | ✅ **KEEP** | Already deprecated |
+| `configs/deprecated/config_default_extended.yaml` | Removed 2025-11-26 | ✅ **DONE** | Deleted per cleanup |
 
 **Consolidation Plan**:
 
@@ -112,7 +112,8 @@ Best settings from each:
 
 **Actions**:
 - **CREATE**: `config_production.yaml` (merge best settings)
-- **DEPRECATE**: Move 4 configs to `configs/deprecated/`
+- **DEPRECATE**: Move 4 configs to `configs/deprecated/` (in progress)
+- **REMOVE**: `config_default_extended.yaml` (completed 2025-11-26)
 - **KEEP**: 5 configs (production, fast, ultra_fast, qwen3, detailed, extended)
 
 ---

@@ -63,6 +63,7 @@ Thumbs.db
 processing_analytics.json
 analytics_report.html
 detailed_report.html
+!tests/snapshots/analytics_report.html
 config.yaml
 *.pid
 obsidian_linker.log

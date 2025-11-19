@@ -118,6 +118,10 @@ Created 15+ reusable fixtures:
 - ✅ EOF handling (CI/CD)
 - ✅ Configuration inputs
 
+#### G. Property-Based Tests (`test_property_based_config_utils.py`) ✅
+- ✅ Hypothesis-driven round-trip validation for JSON save/load helpers
+- ✅ Directory creation invariants across randomized nested paths
+
 ### 4. Integration Tests ✅
 
 #### Integration Test Suite (`test_integration.py`)
@@ -133,7 +137,16 @@ Created 15+ reusable fixtures:
 - ✅ Full vault processing
 - ✅ Model selector integration
 
-### 5. CI/CD Pipeline ✅
+### 5. Output Regression & Mutation Tooling ✅
+
+- **Snapshot tests** (`test_report_snapshot.py`)
+  - Locks HTML analytics report output against a stored snapshot in `tests/snapshots/`
+  - Freezes generation time to keep diffs deterministic
+- **Mutation testing** (`mutmut` via `pyproject.toml`)
+  - Targets core modules (`obsidian_auto_linker_enhanced.py`, `config_utils.py`, `obsidian_link_master/`)
+  - Uses pytest runner; backups disabled for speed
+
+### 6. CI/CD Pipeline ✅
 
 #### GitHub Actions Workflow (`.github/workflows/test.yml`)
 
@@ -161,7 +174,7 @@ Created 15+ reusable fixtures:
    - Safety vulnerability check
    - Report generation
 
-### 6. Test Runner Script ✅
+### 7. Test Runner Script ✅
 
 **`run_tests.sh`** - Convenient test execution:
 ```bash
@@ -175,7 +188,7 @@ Created 15+ reusable fixtures:
 ./run_tests.sh specific    # Specific test file
 ```
 
-### 7. Documentation ✅
+### 8. Documentation ✅
 
 - **`tests/README.md`** - Comprehensive test documentation
   - Quick start guide
@@ -189,7 +202,7 @@ Created 15+ reusable fixtures:
 
 ## Test Statistics
 
-### Total Tests Implemented: **86+ tests**
+### Total Tests Implemented: **90+ tests**
 
 - AI Integration: 15 tests
 - Cache: 15 tests
@@ -198,6 +211,8 @@ Created 15+ reusable fixtures:
 - Integration: 12 tests
 - Confidence Threshold: 6 tests
 - Interactive Mode: 10 tests
+- Property-Based: 2 Hypothesis invariants
+- Snapshot: 1 HTML report lockfile
 
 ### Code Coverage Targets
 

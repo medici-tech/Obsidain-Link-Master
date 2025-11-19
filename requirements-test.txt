@@ -17,6 +17,7 @@ freezegun>=1.2.2
 pytest-xdist>=3.3.1  # Parallel test execution
 pytest-sugar>=0.9.7  # Better test output
 pytest-clarity>=1.0.1  # Better assertion output
+mutmut>=2.4.4  # Mutation testing
 
 # Coverage reporting
 coverage[toml]>=7.2.7

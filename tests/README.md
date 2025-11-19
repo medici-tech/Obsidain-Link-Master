@@ -484,9 +484,34 @@ For issues with tests:
 
 ## Future Improvements
 
-- [ ] Add property-based testing with Hypothesis
-- [ ] Add mutation testing with mutmut
+- [x] Add property-based testing with Hypothesis (config utilities round-trip invariants)
+- [x] Add mutation testing with mutmut
 - [ ] Increase coverage to 80%+
 - [ ] Add performance benchmarking tests
-- [ ] Add snapshot testing for reports
+- [x] Add snapshot testing for reports
 - [ ] Add contract tests for API interactions
+
+### Property-based tests
+Run hypothesis-backed invariants with standard pytest execution:
+
+```bash
+pytest tests/test_property_based_config_utils.py
+```
+
+### Mutation testing
+Run `mutmut` to evaluate test effectiveness against targeted modules:
+
+```bash
+mutmut run --paths-to-mutate obsidian_auto_linker_enhanced.py config_utils.py obsidian_link_master
+```
+
+Mutation settings live in `pyproject.toml` under `[tool.mutmut]`.
+
+### Snapshot testing
+Report rendering is locked via snapshot comparison:
+
+```bash
+pytest tests/test_report_snapshot.py
+```
+
+Snapshots reside in `tests/snapshots/`; regenerate intentionally by re-running the report generation helper with approved analytics data and updating the stored HTML.

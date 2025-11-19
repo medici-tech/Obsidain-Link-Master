@@ -668,10 +668,9 @@ Check system requirements and Ollama connection.
    ```
 
 3. **Missing test categories**:
-   - No property-based tests (Hypothesis)
-   - No mutation testing (mutmut)
-   - No contract tests for Ollama API
-   - No performance regression tests
+   - Property-based tests (Hypothesis) added for config utilities, but contract tests for Ollama API are still absent
+   - Mutation testing (mutmut) now configured; first run results pending
+   - Performance regression tests remain unimplemented
 
 **Recommendations**:
 
