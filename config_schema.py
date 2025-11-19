@@ -13,7 +13,7 @@ import os
 class OllamaConfig(BaseModel):
     """Ollama API configuration"""
     base_url: str = Field(default="http://localhost:11434", description="Ollama API base URL")
-    model: str = Field(default="qwen2.5:3b", description="Ollama model to use")
+    model: str = Field(default="Qwen3-Embedding-8B:Q8_0", description="Ollama model to use")
     timeout: int = Field(default=15, ge=5, le=300, description="API timeout in seconds")
     max_retries: int = Field(default=1, ge=0, le=5, description="Maximum retry attempts")
     temperature: float = Field(default=0.3, ge=0.0, le=2.0, description="Model temperature")
@@ -86,7 +86,7 @@ class ObsidianConfig(BaseModel):
 
     # Ollama configuration
     ollama_base_url: str = Field(default="http://localhost:11434")
-    ollama_model: str = Field(default="qwen2.5:3b")
+    ollama_model: str = Field(default="Qwen3-Embedding-8B:Q8_0")
     ollama_timeout: int = Field(default=15, ge=5, le=300)
     ollama_max_retries: int = Field(default=1, ge=0, le=5)
     ollama_temperature: float = Field(default=0.3, ge=0.0, le=2.0)

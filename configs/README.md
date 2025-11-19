@@ -8,6 +8,7 @@ This directory contains specialized configuration presets for different use case
 - Primary configuration file used by default
 - Balanced settings for general use
 - Edit this file to customize your default behavior
+- Defaults use `Qwen3-Embedding-8B:Q8_0` for Ollama requests
 
 ## Specialized Presets
 
@@ -64,12 +65,6 @@ This directory contains specialized configuration presets for different use case
   - `secondary_model: qwen2.5:3b` (simple files)
   - `model_switching_threshold: 1000` words
 
-**`config_default_extended.yaml`** ⚠️ DEPRECATED
-- Redundant with config_extended_timeout.yaml
-- Not referenced by any scripts
-- Recommend using config_extended_timeout.yaml instead
-- Status: Candidate for removal
-
 ## Configuration Status
 
 ### ✅ Actively Used Configurations
@@ -82,10 +77,6 @@ This directory contains specialized configuration presets for different use case
 - **config_fast.yaml** - Template for `scripts/optimize_performance.py` generation
 - **config_ultra_fast.yaml** - Template for `scripts/optimize_performance.py` generation
 - These are copied/modified when running the optimization script
-
-### ❌ Unused/Deprecated Configurations
-- **config_default_extended.yaml** - Not referenced anywhere, redundant functionality
-  - Recommended action: Remove in next cleanup
 
 ## Usage
 

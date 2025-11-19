@@ -148,10 +148,12 @@ dry_run_limit: 10               # Files to process in dry run
 confidence_threshold: 0.8       # Quality control threshold
 
 # AI Model settings
-ollama_model: "qwen3:8b"        # Primary model
-ollama_temperature: 0.1         # Low temperature for consistency
-ollama_timeout: 600             # 10 minutes per file
+ollama_model: "Qwen3-Embedding-8B:Q8_0"  # Default embedding-focused model
+ollama_temperature: 0.1                # Low temperature for consistency
+ollama_timeout: 600                    # 10 minutes per file
 ```
+
+> ℹ️ **Embedding model note:** The linker calls Ollama's `/api/generate` endpoint for text generation. Embedding-optimized models (like `Qwen3-Embedding-8B:Q8_0`) can run these calls, but they are tuned for vector similarity rather than long-form generation, so you may prefer a general-purpose model if you want richer link rationales or summaries.
 
 ### Quality Control
 ```yaml
@@ -168,6 +170,8 @@ batch_size: 1                   # Process one file at a time
 parallel_workers: 1             # Single-threaded for stability
 max_retries: 5                  # Retry failed analyses
 ```
+
+During the interactive launcher (`run.py`), you can now choose the worker count up front; any value above 1 enables parallel processing in the generated `config.yaml`.
 
 ## 📊 Usage Workflow
 
