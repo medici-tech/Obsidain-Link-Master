@@ -1623,29 +1623,16 @@ def bootstrap_runtime(log_level: str = "INFO") -> RuntimeConfig:
     return runtime_config
 
 
-def main(
-    *,
-    enable_dashboard: bool = False,
-    dashboard_update_interval: int = 15,
-    testing_mode: bool = False,
-) -> None:
+def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
     """Enhanced main processing function"""
     global dashboard, claude_client
 
-    # Ensure a context always exists, even if bootstrapping fails early.
-    active_context: ProcessingContext = DEFAULT_PROCESSING_CONTEXT
-
-    try:
-        runtime_cfg = bootstrap_runtime()
-        active_context = create_processing_context(
-            enable_dashboard=enable_dashboard,
-            dashboard_update_interval=dashboard_update_interval,
-            config_obj=runtime_cfg,
-        )
-    except Exception:
-        logger.exception("Failed to initialize processing context; using default context as fallback")
-
-    context: ProcessingContext = active_context
+    runtime_cfg = bootstrap_runtime()
+    context = create_processing_context(
+        enable_dashboard=enable_dashboard,
+        dashboard_update_interval=dashboard_update_interval,
+        config_obj=runtime_cfg,
+    )
     dashboard = context.dashboard
 
     logger.info("=" * 60)
