@@ -1627,12 +1627,13 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     """Enhanced main processing function"""
     global dashboard, claude_client
 
-    bootstrap_runtime()
-
-    # Initialize dashboard if requested
-    if enable_dashboard:
-        dashboard = LiveDashboard(update_interval=dashboard_update_interval)
-        dashboard.start()
+    runtime_cfg = bootstrap_runtime()
+    context = create_processing_context(
+        enable_dashboard=enable_dashboard,
+        dashboard_update_interval=dashboard_update_interval,
+        config_obj=runtime_cfg,
+    )
+    dashboard = context.dashboard
 
     logger.info("=" * 60)
     logger.info("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
