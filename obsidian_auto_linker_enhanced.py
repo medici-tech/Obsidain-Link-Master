@@ -1685,7 +1685,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info("🔍 Testing Ollama connection...")
     logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
     test_response = call_ollama("Hello", "You are a helpful assistant.", context=context)
-    
+
     # Test AI provider connection first
     logger.info(f"🔍 Testing {AI_PROVIDER.upper()} connection...")
     if AI_PROVIDER == 'ollama':
@@ -1708,6 +1708,10 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         logger.info(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
         logger.info(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
         logger.info(f"   🧠 Extended timeouts prevent reasoning interruptions")
+
+    if testing_mode:
+        logger.info("Testing mode enabled – exiting after provider connectivity checks")
+        return
 
         if AI_PROVIDER == 'claude':
             logger.info(f"✅ Claude API connection successful")
