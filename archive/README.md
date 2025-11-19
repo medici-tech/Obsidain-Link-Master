@@ -69,9 +69,9 @@ git commit -m "Restore filename.py from archive"
 
 ## 📊 Archive Statistics
 
-- **Files Archived**: 3 specialized runners + 2 experimental tests (reference only)
+- **Files Archived**: 5 scripts
 - **Archive Date**: 2025-11-15 (parallel prototypes removed 2025-11-26)
-- **Disk Space Saved**: Significant after deleting legacy parallel prototypes (multiple hundred KB)
+- **Disk Space Saved**: ~90KB
 - **Maintainability Improvement**: Huge (root directory cleanup, reduced parallel runner confusion)
 
 ---
