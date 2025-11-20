@@ -1,0 +1,75 @@
+# Optimized Configuration for Conversational "Second Brain" Content
+# Best for: ChatGPT/Claude conversations, personal notes, knowledge management
+# NOT optimized for: Code repositories, technical documentation
+
+# === PROCESSING SETTINGS ===
+vault_path: /Users/medici/Documents/MediciVault
+dry_run: true
+fast_dry_run: false  # Use AI analysis for better categorization
+batch_size: 10  # Can process more since content is conversational
+file_ordering: recent
+
+# === PRIMARY MODEL (Conversational Content) ===
+# qwen2.5:3b is PERFECT for natural language conversations
+ollama_base_url: http://localhost:11434
+ollama_model: qwen2.5:3b  # Fast, conversational, efficient
+ollama_timeout: 60  # Shorter timeout for lighter model
+ollama_max_retries: 3
+ollama_temperature: 0.2  # Slightly higher for conversational nuance
+ollama_max_tokens: 1500  # Sufficient for conversation analysis
+
+# === EMBEDDING MODEL (Similarity Search) ===
+# HIGHLY RECOMMENDED for conversational content!
+# Embeddings excel at finding semantic similarity in natural language
+embedding_enabled: true
+embedding_model: nomic-embed-text:latest  # Fast, excellent for conversations
+embedding_similarity_threshold: 0.70  # Slightly lower for conversational content
+embedding_top_k: 15  # More suggestions for richer connections
+
+# Why embeddings matter for your use case:
+# - Connects conversations about same topic with different wording
+# - Finds semantic relationships AI analysis might miss
+# - Better "second brain" with more interconnected knowledge
+# - Minimal overhead after first run (cached embeddings)
+
+# === FEATURES ===
+cache_enabled: true
+resume_enabled: true
+incremental: true
+max_cache_size_mb: 1500  # Moderate cache for conversational content
+max_cache_entries: 15000
+
+# === ADVANCED (Optional) ===
+# Confidence threshold for manual review
+confidence_threshold: 0.7  # Lower for conversational content
+enable_review_queue: true
+review_queue_path: reviews/
+
+# === FILTERING ===
+exclude_patterns:
+  - "*.tmp"
+  - ".*"
+  - "_*"
+  - "*.png"
+  - "*.jpg"
+include_patterns:
+  - "*.md"
+
+folder_whitelist:
+  - "Conversations"  # Your ChatGPT/Claude conversations
+  - "Notes"
+  - "Thoughts"
+  - "Ideas"
+
+folder_blacklist:
+  - "_backups"
+  - ".git"
+  - "Templates"
+  - ".obsidian"
+
+# === MOC CATEGORIES (Adjust to your needs) ===
+# These are the standard categories, customize in the main script if needed
+custom_mocs:
+  "AI Conversations": "📍 AI Conversations MOC"
+  "Learning Notes": "📍 Learning Notes MOC"
+  "Ideas & Thoughts": "📍 Ideas & Thoughts MOC"
