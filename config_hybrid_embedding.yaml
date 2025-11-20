@@ -1,0 +1,60 @@
+# Hybrid Configuration: Embeddings + Text Generation
+# This config uses embedding models for similarity search
+# and generation models for analysis and linking
+
+# === PROCESSING SETTINGS ===
+vault_path: /Users/medici/Documents/MediciVault
+dry_run: true
+fast_dry_run: false
+batch_size: 5
+file_ordering: recent
+
+# === PRIMARY MODEL (Text Generation) ===
+# Use qwen2.5-coder:7b as the primary model for text generation
+# This model is excellent for technical content and structured output
+ollama_base_url: http://localhost:11434
+ollama_model: qwen2.5-coder:7b
+ollama_timeout: 120
+ollama_max_retries: 3
+ollama_temperature: 0.1
+ollama_max_tokens: 2048
+
+# === EMBEDDING MODEL (Similarity Search) ===
+# Use Qwen3-Embedding for finding similar notes
+embedding_model: dengcao/Qwen3-Embedding-8B:Q8_0
+embedding_base_url: http://localhost:11434
+embedding_enabled: true
+embedding_similarity_threshold: 0.75  # Minimum similarity score (0-1)
+embedding_top_k: 10  # Number of similar notes to find
+
+# Alternative: Use nomic-embed-text (faster, lighter)
+# embedding_model: nomic-embed-text:latest
+
+# === INTELLIGENT MODEL SWITCHING (Optional) ===
+# Use different models based on content complexity
+hybrid_model_selection: true
+primary_ollama_model: qwen2.5-coder:7b  # Complex content
+secondary_ollama_model: qwen2.5:3b      # Simple content
+model_switching_threshold: 1000  # Word count threshold
+
+# === FEATURES ===
+cache_enabled: true
+resume_enabled: true
+incremental: true
+max_cache_size_mb: 2000
+max_cache_entries: 20000
+
+# === FILTERING ===
+exclude_patterns:
+  - "*.tmp"
+  - ".*"
+  - "_*"
+include_patterns:
+  - "*.md"
+folder_whitelist:
+  - "Conversations"
+  - "Notes"
+folder_blacklist:
+  - "_backups"
+  - ".git"
+  - "Templates"
