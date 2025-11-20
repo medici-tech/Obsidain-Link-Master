@@ -6,7 +6,7 @@ This directory contains utility scripts and modules used by the Enhanced Obsidia
 
 ## 🔧 Core Utilities
 
-### cache_utils.py (273 lines)
+### cache_utils.py (281 lines)
 
 **Purpose**: Bounded cache implementation with LRU eviction to prevent memory issues
 
@@ -61,7 +61,7 @@ else:
 
 ---
 
-### incremental_processing.py
+### incremental_processing.py (300 lines)
 
 **Purpose**: File hash tracking for incremental vault processing
 
@@ -95,7 +95,7 @@ tracker.save()
 
 ---
 
-### intelligent_model_selector.py (9.2KB)
+### intelligent_model_selector.py (219 lines)
 
 **Purpose**: Select optimal Ollama model based on content complexity
 
@@ -132,7 +132,7 @@ model = selector.select_model(content, file_path)
 
 ---
 
-### dry_run_analysis.py
+### dry_run_analysis.py (352 lines)
 
 **Purpose**: Fast dry-run analysis using keyword-based heuristics (no AI)
 
@@ -156,9 +156,52 @@ result = fast_dry_run_analysis(content, "note.md")
 
 ---
 
+### embedding_similarity.py (276 lines)
+
+**Purpose**: Hybrid embedding + AI sibling detection for vault notes
+
+**Classes**:
+
+#### `EmbeddingManager`
+Manages embedding generation, caching, and cosine similarity search.
+
+**Features**:
+- Uses local embedding models (Qwen3-Embedding, `nomic-embed-text`)
+- Disk-backed cache keyed by file path or content hash
+- Configurable similarity threshold and `top_k`
+- Cosine similarity with 0–1 normalization
+
+**Usage**:
+```python
+from scripts.embedding_similarity import EmbeddingManager, integrate_embeddings_with_ai_analysis
+
+config = {
+    "embedding_enabled": True,
+    "embedding_model": "nomic-embed-text:latest",
+    "vault_path": "/path/to/vault"
+}
+manager = EmbeddingManager(config)
+
+enhanced = integrate_embeddings_with_ai_analysis(
+    manager,
+    current_note_path="notes/topic.md",
+    current_note_content="...",
+    all_notes={"notes/other.md": "..."},
+    ai_result={"sibling_notes": ["existing"]},
+)
+```
+
+**Methods**:
+- `get_embedding(text, file_path="")` - Generate or retrieve cached embedding
+- `find_similar_notes(current_note_path, current_note_content, all_notes)` - Return top similar notes
+- `cosine_similarity(vec1, vec2)` - Compute normalized cosine similarity
+- `integrate_embeddings_with_ai_analysis(...)` - Merge embedding neighbors with AI-suggested siblings
+
+---
+
 ## 🧪 Testing & Benchmarking
 
-### model_performance_test.py
+### model_performance_test.py (161 lines)
 
 **Purpose**: Benchmark different Ollama models for speed and quality
 
@@ -177,41 +220,9 @@ python scripts/model_performance_test.py
 
 ---
 
-### test_confidence_threshold.py
-
-**Purpose**: Test quality control thresholds
-
-**Features**:
-- Confidence score analysis
-- Threshold tuning
-- False positive/negative rates
-
-**Usage**:
-```bash
-python scripts/test_confidence_threshold.py
-```
-
----
-
-### test_interactive.py
-
-**Purpose**: Interactive testing of AI analysis
-
-**Features**:
-- Single file testing
-- Immediate feedback
-- Debugging aid
-
-**Usage**:
-```bash
-python scripts/test_interactive.py path/to/note.md
-```
-
----
-
 ## 🛠️ Setup & Configuration
 
-### setup_new_computer.sh
+### setup_new_computer.sh (195 lines)
 
 **Purpose**: One-command setup for new development machines
 
@@ -238,7 +249,7 @@ chmod +x scripts/setup_new_computer.sh
 
 ---
 
-### verify_system.py
+### verify_system.py (193 lines)
 
 **Purpose**: Verify system requirements and dependencies
 
@@ -264,7 +275,7 @@ System ready for processing!
 
 ---
 
-### optimize_ollama.sh
+### optimize_ollama.sh (57 lines)
 
 **Purpose**: Optimize Ollama settings for M4 MacBook Air
 
@@ -281,7 +292,7 @@ chmod +x scripts/optimize_ollama.sh
 
 ---
 
-### optimize_performance.py
+### optimize_performance.py (140 lines)
 
 **Purpose**: Profile and optimize Python code performance
 
@@ -302,13 +313,16 @@ python scripts/optimize_performance.py
 
 | Script | Lines | Purpose | Frequency |
 |--------|-------|---------|-----------|
-| `cache_utils.py` | 273 | Core utility | Every run |
-| `incremental_processing.py` | ~200 | Core utility | Every run |
-| `intelligent_model_selector.py` | ~250 | Core utility | Every run |
-| `dry_run_analysis.py` | ~300 | Testing | Dry runs |
-| `model_performance_test.py` | ~150 | Benchmarking | Occasional |
-| `setup_new_computer.sh` | ~150 | Setup | One-time |
-| `verify_system.py` | ~100 | Verification | Setup/troubleshooting |
+| `cache_utils.py` | 281 | Core utility | Every run |
+| `incremental_processing.py` | 300 | Core utility | Every run |
+| `intelligent_model_selector.py` | 219 | Core utility | Every run |
+| `embedding_similarity.py` | 276 | Similarity | Optional (embeddings on) |
+| `dry_run_analysis.py` | 352 | Testing | Dry runs |
+| `model_performance_test.py` | 161 | Benchmarking | Occasional |
+| `optimize_performance.py` | 140 | Profiling | As needed |
+| `optimize_ollama.sh` | 57 | Ollama tuning | One-time per host |
+| `setup_new_computer.sh` | 195 | Setup | One-time |
+| `verify_system.py` | 193 | Verification | Setup/troubleshooting |
 
 ---
 
