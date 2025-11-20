@@ -6,6 +6,8 @@
 
 An intelligent AI-powered system for automatically categorizing and linking Obsidian vault files using local LLM models with advanced quality control features.
 
+> **Why it exists:** Obsidian vaults grow messy quickly. The Auto-Linker scans your notes, proposes consistent MOC categories, and creates safe backlinks so you can focus on writing instead of bookkeeping.
+
 ## 📚 Documentation Quick Links
 
 | Document | Description |
@@ -73,7 +75,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2b. Install as a package with the CLI entrypoint (recommended)
+### 3. Install as a package with the CLI entrypoint (recommended)
 ```bash
 pip install -e .[dev]
 
@@ -90,7 +92,7 @@ obsidian-link-master --non-interactive --dashboard
 # need a richer standalone HTML report.
 ```
 
-### 2c. Use the packaged CLI after installation
+### 4. Use the packaged CLI after installation
 Once installed (editable or from a built wheel), you can invoke the tool from
 anywhere without referencing repository paths:
 
@@ -102,7 +104,7 @@ obsidian-link-master --config config.yaml --non-interactive
 python -m obsidian_link_master --config config.yaml
 ```
 
-### 3. Install and Setup Ollama
+### 5. Install and Setup Ollama
 ```bash
 # Install Ollama (macOS)
 brew install ollama
@@ -117,7 +119,7 @@ ollama pull qwen3:8b
 ollama pull qwen2.5:3b
 ```
 
-### 4. Configure Your Vault
+### 6. Configure Your Vault
 Edit `config.yaml`:
 ```yaml
 # Update vault path
@@ -128,7 +130,7 @@ confidence_threshold: 0.8  # 80% confidence required
 dry_run_limit: 10         # Process 10 files in dry run
 ```
 
-### 5. Run the Application
+### 7. Run the Application
 ```bash
 # Activate virtual environment
 source venv/bin/activate
@@ -136,6 +138,11 @@ source venv/bin/activate
 # Run the enhanced auto-linker
 python3 obsidian_auto_linker_enhanced.py
 ```
+
+### 8. Validate the setup (optional but recommended)
+- Confirm the CLI banner appears and lists your configured vault path.
+- Check that `analytics/` or `reports/` folders are created after the first dry run.
+- Review `logs/obsidian_link_master.log` for any warnings before switching off dry-run mode.
 
 ## ⚙️ Configuration
 
