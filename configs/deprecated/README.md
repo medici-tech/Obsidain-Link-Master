@@ -1,7 +1,7 @@
 # Deprecated Configuration Files
 
-This directory previously contained deprecated configuration files that were kept for reference. The remaining presets have been
-fully retired and removed to reduce confusion. Keep any future deprecated configs here temporarily, but delete them once
-replacements are stable.
+This directory contains presets that are no longer maintained. They are kept only for reference and should not be used for new runs.
 
-**Last Updated**: 2025-11-26
+- `config_parallel_timeout.yaml` — older parallel-processing preset superseded by the active configs in `configs/`. Prefer `config_parallel_optimized.yaml` or tune `parallel_workers`/timeouts directly in `config.yaml`.
+
+**Last Updated**: 2025-11-20

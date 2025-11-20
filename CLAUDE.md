@@ -2,8 +2,8 @@
 
 **For AI Assistants working on this project**
 
-**Last Updated**: 2025-03-30
-**Version**: 3.1.0 - Post-Review Edition
+**Last Updated**: 2025-11-20
+**Version**: 3.3.0 - Status Refresh
 **Purpose**: Comprehensive guide for AI assistants working with the Obsidian Auto-Linker codebase
 
 ---
@@ -49,13 +49,13 @@
 |---------|--------|-------------|
 | **Safe Processing** | ✅ Complete | Dry-run mode, automatic backups |
 | **Smart Caching** | ✅ Complete | MD5-based cache with LRU eviction |
-| **Bounded Cache** | ✅ Implemented | Memory leak prevention with size limits |
-| **Incremental Processing** | ✅ Implemented | 90% faster on reruns (hash-based) |
+| **Bounded Cache** | ✅ Complete | Size- and entry-limited LRU cache to prevent memory leaks |
+| **Incremental Processing** | ✅ Complete | Skips unchanged files via persistent hash tracking |
 | **Resume Capability** | ✅ Complete | Stop/restart without losing progress |
 | **Live Dashboard** | ✅ Complete | Real-time metrics with Rich library |
 | **Multiple Modes** | ✅ Complete | Fast Dry Run, Full Dry Run, Live Run |
-| **Comprehensive Testing** | ✅ Complete | 291+ tests across 14 test files |
-| **Parallel Processing** | ⏳ Planned | Config exists, implementation planned |
+| **Comprehensive Testing** | ✅ Mostly Complete | ~324 collected tests across 20 modules (full run requires optional dev extras) |
+| **Parallel Processing** | ✅ Implemented | Configurable ThreadPoolExecutor-based concurrency |
 
 ### 1.3 Target Environment
 
@@ -74,42 +74,40 @@
 ### 2.1 Recent Major Accomplishments (November 2025)
 
 **✅ Phase 1 Complete - Code Organization & Cleanup**
-- Archived 13 duplicate/experimental files
-- Consolidated duplicate code (cache_utils.py)
-- Fixed all import issues
-- Created comprehensive documentation
-- Professional README with CI badges
-- 47% reduction in root directory files
+- Archived duplicate/experimental runners and consolidated cache utilities
+- Standardized packaging via `pyproject.toml` with the `obsidian-link-master` console script
+- Refreshed docs (README/QUICK_START/CLAUDE) and aligned default configs
 
-**✅ Phase 2 In Progress - Performance Features**
-- ✅ **Bounded Cache Implemented** (prevents memory leaks)
-- ✅ **Incremental Processing Implemented** (90% faster reruns)
-- ⏳ Parallel Processing (planned)
+**✅ Phase 2 Complete - Performance & Reliability**
+- ✅ **Bounded Cache Implemented** (prevents runaway memory)
+- ✅ **Incremental Processing Implemented** (persistent hashes to skip unchanged files)
+- ✅ **Parallel Processing Implemented** (configurable workers via ThreadPoolExecutor and CLI flags)
+- ✅ **Live Dashboard & Resume Flow Validated** (interactive and non-interactive entrypoints)
 
 **✅ Comprehensive Testing**
-- 291+ tests across 14 test files
-- 55% code coverage (target: 70%+)
-- Full CI/CD pipeline with GitHub Actions
-- Multi-version Python testing (3.9-3.12)
+- 20 pytest modules with ~324 collected tests (requires `hypothesis` and `freezegun` extras for full collection)
+- Coverage sits in the low/mid-50% range (goal: 70%+)
+- GitHub Actions workflow defined for CI (Python 3.9–3.12)
 
 ### 2.2 Project Health Metrics
 
 ```
 Code Organization:    ⭐⭐⭐⭐⭐ (5/5) - Clean, professional
 Documentation:        ⭐⭐⭐⭐⭐ (5/5) - Comprehensive (100KB+)
-Test Coverage:        ⭐⭐⭐⭐ (4/5) - Good (55%, improving)
+Test Coverage:        ⭐⭐⭐ (3/5) - ~50-55% (full run needs optional dev extras)
 Code Quality:         ⭐⭐⭐⭐ (4/5) - High quality, some improvements needed
 Maintainability:      ⭐⭐⭐⭐⭐ (5/5) - Excellent structure
 Developer Experience: ⭐⭐⭐⭐⭐ (5/5) - Clear, well-documented
 
-Overall:              ⭐⭐⭐⭐⭐ (5/5) - EXCELLENT
+Overall:              ⭐⭐⭐⭐ (4/5) - STRONG
 ```
 
 ### 2.3 What's Working Well
 
 - ✅ Core processing engine (stable, production-ready)
 - ✅ Caching system (now with bounded cache)
-- ✅ Incremental processing (90% faster on reruns)
+- ✅ Incremental processing (skips unchanged files for faster reruns)
+- ✅ Parallel processing (configurable workers via ThreadPoolExecutor)
 - ✅ Dashboard infrastructure (integrated with runners)
 - ✅ Progress tracking and resume functionality
 - ✅ Comprehensive test suite
@@ -118,17 +116,16 @@ Overall:              ⭐⭐⭐⭐⭐ (5/5) - EXCELLENT
 
 ### 2.4 Known Limitations
 
-- ⏳ Parallel processing not yet implemented (sequential only)
-- ⏳ Test coverage at 55% (targeting 70%+)
+- ⏳ Test coverage sits around 50–55% (targeting 70%+)
+- ⚠️ Optional dev dependencies (`hypothesis`, `freezegun`, etc.) are not in the base `requirements.txt`; install `requirements-test.txt` to run the full suite without collection errors
 - ⏳ Some magic numbers in code (acceptable for now)
-- ⏳ Scripts directory needs README (planned)
 
 ### 2.5 March 2025 Review Highlights
 
 - ⚠️ **Configuration validation gaps**: CLI flags (especially `--live`/`--dashboard`) can bypass schema checks—prefer loading configs through `config_utils.validate_and_resolve_config` and tighten validation before new releases.
 - ⚠️ **Ollama timeout handling**: Long-running generations can exceed defaults; adjust `ollama_timeout_seconds` in configs or propagate per-call overrides to prevent stuck runs.
 - ⚠️ **Incomplete default coverage**: Some config keys (e.g., cache/dry-run toggles) rely on implicit defaults—keep `config_schema.py` and sample YAML files aligned.
-- ⚠️ **Test setup guidance drift**: Several docs still reference deprecated setup scripts; follow `TESTING_GUIDE.md` and `requirements-test.txt` for current workflows until docs are refreshed.
+- ⚠️ **Test tooling requirements**: Install from `requirements-test.txt` for property-based and snapshot tests; otherwise `pytest --collect-only` will fail on missing extras.
 - 📄 Full details: see `CODE_REVIEW_2025-03-30.md` for actionable recommendations and context from the latest audit.
 
 ---
@@ -138,110 +135,40 @@ Overall:              ⭐⭐⭐⭐⭐ (5/5) - EXCELLENT
 ### 3.1 Current File Organization (Post-Cleanup)
 
 ```
-/home/user/Obsidain-Link-Master/
-├── 📁 Core Application (Root Directory - 12 files)
-│   ├── obsidian_auto_linker_enhanced.py  # Main processor (2,052 lines)
-│   ├── run.py                            # Interactive CLI runner (575 lines)
-│   ├── run_with_dashboard.py             # Dashboard runner (567 lines)
-│   ├── live_dashboard.py                 # Live dashboard (688 lines)
-│   ├── enhanced_analytics.py             # Analytics (530 lines)
-│   ├── ultra_detailed_analytics.py       # Advanced analytics (567 lines)
-│   ├── logger_config.py                  # Logging system (110 lines)
-│   ├── memory_monitor.py                 # Memory tracking (215 lines)
-│   ├── config_utils.py                   # Config utilities (353 lines)
-│   ├── config_schema.py                  # Pydantic validation (285 lines)
-│   ├── check_memory.py                   # Memory check utility (74 lines)
-│   └── config.yaml                       # User configuration
-│
-├── 📁 Scripts (Utilities)
-│   ├── intelligent_model_selector.py     # Model selection logic
-│   ├── model_performance_test.py         # Model benchmarking
-│   ├── optimize_performance.py           # Performance tuning
-│   ├── dry_run_analysis.py              # Dry run tools
-│   ├── cache_utils.py                   # Cache management (bounded cache)
-│   ├── incremental_processing.py        # Incremental processing (FileHashTracker)
-│   ├── verify_system.py                 # System verification
-│   └── README.md                        # Scripts documentation (planned)
-│
-├── 📁 Tests (14 test files, 291+ tests)
-│   ├── conftest.py                      # Pytest fixtures
-│   ├── test_ollama_integration.py       # AI integration (15 tests)
-│   ├── test_cache.py                    # Cache operations (15 tests)
-│   ├── test_analytics.py                # Analytics (22 tests)
-│   ├── test_dashboard.py                # Dashboard (30+ tests)
-│   ├── test_model_selector.py           # Model selection (40+ tests)
-│   ├── test_ultra_detailed_analytics.py # Advanced analytics (45+ tests)
-│   ├── test_live_monitoring.py          # Live monitoring (70+ tests)
-│   ├── test_performance_benchmarks.py   # Performance (50+ tests)
-│   ├── test_content_processing.py       # Content processing (12 tests)
-│   ├── test_file_operations.py          # File operations (18 tests)
-│   ├── test_integration.py              # Integration tests (12 tests)
-│   ├── test_logger_config.py            # Logging (10 tests)
-│   ├── test_config_utils.py             # Config utilities (28 tests)
-│   └── test_config_schema.py            # Pydantic validation (26 tests)
-│
-├── 📁 Configs (8 active configurations)
-│   ├── config_fast.yaml                 # Fast processing
-│   ├── config_ultra_fast.yaml           # Ultra-fast mode
-│   ├── config_hybrid_models.yaml        # Hybrid model selection
-│   ├── config_qwen3_maximum_detail.yaml # Maximum detail mode
-│   ├── config_extended_timeout.yaml     # Extended timeouts
-│   ├── config_detailed_analytics.yaml   # Detailed analytics
-│   ├── config_parallel_optimized.yaml   # Parallel processing (future)
-│   ├── config_macbook_air_16gb.yaml     # MacBook Air optimized
-│   ├── deprecated/                      # Deprecated configs (archived)
-│   └── README.md                        # Configuration guide
-│
-├── 📁 Documentation (100KB+ docs)
-│   ├── README.md                        # Quick start (10KB)
-│   ├── CLAUDE.md                        # This file (AI assistant guide)
-│   ├── ARCHITECTURE.md                  # System architecture (28KB)
-│   ├── API_REFERENCE.md                 # API documentation (20KB)
-│   ├── TROUBLESHOOTING.md               # Problem solving (17KB)
-│   ├── ROADMAP.md                       # Development roadmap (24KB)
-│   ├── README_ENHANCED.md               # Comprehensive guide (14KB)
-│   ├── QUICK_START.md                   # 5-minute setup (2KB)
-│   ├── COMPREHENSIVE_REVIEW.md          # Project review (35KB)
-│   ├── SESSION_COMPLETION_SUMMARY.md    # Phase 1 completion (16KB)
-│   ├── CLEANUP_SUMMARY.md               # Cleanup report (10KB)
-│   ├── PHASE_2_PROGRESS_SUMMARY.md      # Phase 2 status (12KB)
-│   ├── REFACTORING_PLAN.md              # Refactoring guide (22KB)
-│   ├── REPOSITORY_ANALYSIS_SUMMARY.md   # Repo analysis (22KB)
-│   ├── PROJECT_TODO.md                  # Master TODO list (9KB)
-│   ├── TESTING_GUIDE.md                 # Testing guide (13KB)
-│   ├── DEPLOYMENT.md                    # Deployment guide (6KB)
-│   ├── CONTRIBUTING.md                  # Contribution guide (10KB)
-│   └── USAGE.md                         # Usage examples (2KB)
-│
-├── 📁 Archive (Experimental/deprecated files)
-│   ├── experimental_runners/            # Old runner scripts (3 reference wrappers)
-│   ├── experimental_tests/              # Old test files (2 files)
-│   ├── old_docs/                        # Archived documentation
-│   └── README.md                        # Archive documentation
-│
-├── 📁 Other Directories
-│   ├── .github/workflows/               # CI/CD (GitHub Actions)
-│   ├── reports/                         # Generated analytics
-│   ├── reviews/                         # Manual review queue
-│   └── docs/                            # Additional documentation
-│
-└── 📁 Configuration Files
-    ├── requirements.txt                 # Python dependencies
-    ├── requirements-test.txt            # Testing dependencies
-    ├── pytest.ini                       # Pytest configuration
-    ├── .gitignore                       # Git ignore rules
-    └── LICENSE                          # MIT License
+/workspace/Obsidain-Link-Master/
+├── obsidian_link_master/            # Packaged CLI (__main__.py, cli.py, configuration helpers)
+├── obsidian_auto_linker_enhanced.py # Main processor
+├── run.py / run_with_dashboard.py   # Legacy wrappers delegating to the packaged CLI
+├── live_dashboard.py                # Live terminal dashboard
+├── config_utils.py / config_schema.py / configuration.py
+├── logger_config.py / memory_monitor.py / check_memory.py
+├── enhanced_analytics.py / ultra_detailed_analytics.py
+├── config.yaml                      # Default configuration
+├── configs/                         # Sample presets + deprecated/
+│   ├── *.yaml (fast, ultra_fast, detailed_analytics, extended_timeout, hybrid_models,
+│   │    qwen3_maximum_detail, macbook_air_16gb, parallel_optimized)
+│   └── deprecated/                  # Archived presets (config_parallel_timeout.yaml, README)
+├── scripts/                         # Utilities (cache_utils, incremental_processing, model selection,
+│                                    # embedding similarity, optimize_ollama, setup_new_computer, verify_system)
+├── tests/                           # 20 pytest modules including runtime bootstrap, property-based config utils,
+│                                    # dashboard/live monitoring, report snapshots, and integration flows
+├── docs/                            # Vault cleanup plans and status reports
+├── archive/                         # Experimental runners/docs kept for reference
+├── reports/ / reviews/              # Generated analytics and manual review notes
+├── parallel_processing_analytics.html / progress_data.json
+└── README.md, CLAUDE.md, ROADMAP.md, etc. (documentation set)
+
 ```
 
 ### 3.2 Key Metrics
 
 ```
-Total Python Files:     ~30 core files + 14 test files + 8 utility scripts
+Total Python Files:     ~30 core files + 20 test modules + 10 utility scripts
 Total Lines of Code:    ~15,000 lines (core) + ~5,000 lines (tests)
 Documentation:          100KB+ across 20+ files
-Tests:                  291+ tests across 14 files
-Test Coverage:          55% (target: 70%+)
-Configs:                8 active + 2 deprecated
+Tests:                  ~324 collected tests across 20 files (full run needs test extras)
+Test Coverage:          ~50-55% (target: 70%+)
+Configs:                8 active + deprecated folder for archived presets
 ```
 
 ---
@@ -727,28 +654,18 @@ Features:
 
 ### 8.1 Test Organization
 
-**14 Test Files, 291+ Tests**:
-
-| Test File | Tests | Focus Area |
-|-----------|-------|------------|
-| `test_ollama_integration.py` | 15 | AI integration, API calls |
-| `test_cache.py` | 15 | Cache operations, bounded cache |
-| `test_analytics.py` | 22 | Analytics generation |
-| `test_dashboard.py` | 30+ | Dashboard UI, metrics |
-| `test_model_selector.py` | 40+ | Model selection logic |
-| `test_ultra_detailed_analytics.py` | 45+ | Advanced analytics |
-| `test_live_monitoring.py` | 70+ | Live monitoring |
-| `test_performance_benchmarks.py` | 50+ | Performance baselines |
-| `test_content_processing.py` | 12 | Content analysis |
-| `test_file_operations.py` | 18 | File I/O operations |
-| `test_integration.py` | 12 | End-to-end workflows |
-| `test_logger_config.py` | 10 | Logging system |
-| `test_config_utils.py` | 28 | Config utilities |
-| `test_config_schema.py` | 26 | Pydantic validation |
+**20 Test Modules (~324 collected tests)**
+- Core coverage across cache, analytics, dashboard/live monitoring, config validation, integration, and runtime bootstrap
+- Property-based checks in `tests/test_property_based_config_utils.py` (requires `hypothesis`)
+- Snapshot/time-sensitive checks in `tests/test_report_snapshot.py` (requires `freezegun`)
+- Optional performance markers live in `tests/test_performance_benchmarks.py`
 
 ### 8.2 Running Tests
 
 ```bash
+# Install test-only dependencies (property-based + snapshot tests)
+pip install -r requirements-test.txt
+
 # All tests
 pytest
 
@@ -1136,9 +1053,9 @@ Create comprehensive documentation for all utility scripts in `scripts/` directo
 | Dashboard | ✅ Complete | Integrated with runners |
 | Logging System | ✅ Complete | Structured logging |
 | Progress Tracking | ✅ Complete | Resume functionality |
-| Test Suite | ✅ Complete | 291+ tests, 55% coverage |
+| Test Suite | ✅ Mostly Complete | ~324 tests; install test extras for full run |
 | CI/CD | ✅ Complete | GitHub Actions |
-| Parallel Processing | ⏳ Planned | Sequential only for now |
+| Parallel Processing | ✅ Complete | ThreadPoolExecutor workers configurable |
 | Web Dashboard | ⏳ Future | Terminal dashboard works |
 
 ---
@@ -1147,10 +1064,10 @@ Create comprehensive documentation for all utility scripts in `scripts/` directo
 
 1. **Project is local-only** - No cloud services, no external APIs, privacy-first
 2. **Phase 1 complete** - Code organization, cleanup, documentation all done
-3. **Phase 2 in progress** - Bounded cache ✅, Incremental ✅, Parallel ⏳
-4. **Test coverage is good** - 291+ tests, 55% coverage, CI/CD working
+3. **Phase 2 complete** - Bounded cache ✅, Incremental ✅, Parallel ✅
+4. **Test coverage is improving** - ~324 tests, low/mid-50% coverage; install test extras for full runs
 5. **Documentation is comprehensive** - 100KB+ across 20+ files
-6. **Main priorities** - Parallel processing, increase test coverage, scripts README
+6. **Main priorities** - Increase test coverage, keep configs/docs aligned, monitor parallel defaults
 
 ### Critical Knowledge
 
