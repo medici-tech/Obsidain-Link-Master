@@ -37,9 +37,15 @@ An intelligent AI-powered system for automatically categorizing and linking Obsi
 - **Backups & Dry Run**: Automatic backups and dry-run options keep vault changes safe
 
 ### ⚡ Performance & Resilience
-- **Bounded + Persistent Cache**: LRU cache with size/entry limits and persisted hashes for incremental reruns
-- **Parallel Processing**: Configurable ThreadPoolExecutor workers via CLI or `config.yaml`
-- **Resume & Progress Tracking**: Safe restarts with progress files and live dashboard metrics
+- **Hash-Based Caching**: Response/hash caching is in place; bounded eviction is still pending
+- **Parallel Processing**: ThreadPool scaffolding exists via CLI/config, but work currently runs sequentially
+- **Resume & Progress Tracking**: Basic progress files and dashboard metrics; needs hardening for interruptions
+
+## 🧭 Current Status Snapshot
+
+- **Core pipeline** runs locally with Qwen models (`qwen3:8b` or `qwen2.5:3b`) to perform MOC categorization, wikilink creation, and tag-style linking.
+- **Runtime foundations are live**: dashboard telemetry, local Ollama access, hybrid model selection, hashing-based caching, basic resume scaffolding, and analytics reporting.
+- **Gaps to close**: parallel processing is scaffolded but effectively sequential; cache needs bounded eviction; link-quality scoring is unimplemented; resume tracking is basic; incremental processing and dashboard metric export are still planned.
 
 ## 📋 Prerequisites
 

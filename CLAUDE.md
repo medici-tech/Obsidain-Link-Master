@@ -48,14 +48,14 @@
 | Feature | Status | Description |
 |---------|--------|-------------|
 | **Safe Processing** | ✅ Complete | Dry-run mode, automatic backups |
-| **Smart Caching** | ✅ Complete | MD5-based cache with LRU eviction |
-| **Bounded Cache** | ✅ Complete | Size- and entry-limited LRU cache to prevent memory leaks |
-| **Incremental Processing** | ✅ Complete | Skips unchanged files via persistent hash tracking |
-| **Resume Capability** | ✅ Complete | Stop/restart without losing progress |
+| **Smart Caching** | 🟡 In Progress | Hash-based caching is in place; bounded eviction is still pending |
+| **Bounded Cache** | 🟡 Planned | Needs size/entry limits to prevent memory bloat |
+| **Incremental Processing** | 🟡 In Progress | Hashing exists; full incremental skips are planned |
+| **Resume Capability** | 🟡 In Progress | Basic resume scaffolding exists; robustness improvements needed |
 | **Live Dashboard** | ✅ Complete | Real-time metrics with Rich library |
 | **Multiple Modes** | ✅ Complete | Fast Dry Run, Full Dry Run, Live Run |
 | **Comprehensive Testing** | ✅ Mostly Complete | ~324 collected tests across 20 modules (full run requires optional dev extras) |
-| **Parallel Processing** | ✅ Implemented | Configurable ThreadPoolExecutor-based concurrency |
+| **Parallel Processing** | 🟡 In Progress | ThreadPool scaffolding exists, but execution is effectively sequential |
 
 ### 1.3 Target Environment
 
@@ -73,16 +73,21 @@
 
 ### 2.1 Recent Major Accomplishments (November 2025)
 
+**🔎 Current “Second Brain” Snapshot**
+- **Core pipeline** already runs locally with Qwen models (`qwen3:8b` and `qwen2.5:3b`), performing MOC categorization, wiki-style linking, and tag generation.
+- **Runtime foundations are live**: dashboard telemetry, Ollama access, hybrid model selection, hashing-based caching, basic resume scaffolding, MOC categorization, wikilink creation, and analytics reporting.
+- **Quality/resilience gaps remain**: parallel processing is scaffolded but runs sequentially; cache lacks bounded eviction; link-quality scoring is not implemented; resume tracking is basic; incremental processing and dashboard metric export are still planned.
+
 **✅ Phase 1 Complete - Code Organization & Cleanup**
 - Archived duplicate/experimental runners and consolidated cache utilities
 - Standardized packaging via `pyproject.toml` with the `obsidian-link-master` console script
 - Refreshed docs (README/QUICK_START/CLAUDE) and aligned default configs
 
-**✅ Phase 2 Complete - Performance & Reliability**
-- ✅ **Bounded Cache Implemented** (prevents runaway memory)
-- ✅ **Incremental Processing Implemented** (persistent hashes to skip unchanged files)
-- ✅ **Parallel Processing Implemented** (configurable workers via ThreadPoolExecutor and CLI flags)
-- ✅ **Live Dashboard & Resume Flow Validated** (interactive and non-interactive entrypoints)
+**🟡 Phase 2 In Progress - Performance & Reliability**
+- Bounded cache eviction still needed to prevent runaway memory
+- Incremental processing planned to skip unchanged files
+- Parallel processing scaffolding present but not yet parallelizing work
+- Live dashboard and resume flow exist but need robustness improvements
 
 **✅ Comprehensive Testing**
 - 20 pytest modules with ~324 collected tests (requires `hypothesis` and `freezegun` extras for full collection)
@@ -104,15 +109,11 @@ Overall:              ⭐⭐⭐⭐ (4/5) - STRONG
 
 ### 2.3 What's Working Well
 
-- ✅ Core processing engine (stable, production-ready)
-- ✅ Caching system (now with bounded cache)
-- ✅ Incremental processing (skips unchanged files for faster reruns)
-- ✅ Parallel processing (configurable workers via ThreadPoolExecutor)
-- ✅ Dashboard infrastructure (integrated with runners)
-- ✅ Progress tracking and resume functionality
-- ✅ Comprehensive test suite
-- ✅ CI/CD automation
-- ✅ Documentation (extensive and up-to-date)
+- ✅ Core processing pipeline for MOC categorization, wikilinks, and tag generation using local Qwen models
+- ✅ Dashboard telemetry and analytics reporting
+- ✅ Hash-based caching, hybrid model selection, and local Ollama integration
+- ✅ CI/CD automation and a comprehensive (though mid-coverage) test suite
+- ✅ Documentation remains extensive and up to date
 
 ### 2.4 Known Limitations
 

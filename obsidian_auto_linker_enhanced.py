@@ -46,7 +46,7 @@ from config_utils import (
 from live_dashboard import LiveDashboard
 from logger_config import get_logger, setup_logging
 from obsidian_link_master.configuration import DEFAULT_CONFIG, RuntimeConfig, load_runtime_config
-from scripts.cache_utils import BoundedCache, IncrementalTracker
+from scripts.cache_utils import BoundedCache
 from scripts.incremental_processing import FileHashTracker, create_hash_tracker
 
 DEFAULT_CONFIG = {
@@ -260,7 +260,6 @@ MAX_CACHE_ENTRIES = runtime_config.max_cache_entries
 
 # Incremental processing configuration (enabled by default for performance)
 INCREMENTAL_ENABLED = runtime_config.incremental  # Default: True for 90% faster reruns
-INCREMENTAL_TRACKER_FILE = runtime_config.incremental_tracker_file
 if INCREMENTAL_ENABLED:
     logger.info("✅ Incremental processing enabled (skips unchanged files for 90% faster reruns)")
 # Quality control settings
@@ -618,8 +617,8 @@ progress_lock = threading.RLock()
 analytics_lock = threading.RLock()
 hash_tracker_lock = threading.RLock()
 
-# Incremental processing tracker
-incremental_tracker = IncrementalTracker()
+# Incremental processing tracker (FileHashTracker is instantiated in main)
+hash_tracker: Optional[FileHashTracker] = None
 
 # 12 MOC System (enhanced with custom support)
 MOCS = {
@@ -803,23 +802,19 @@ def save_cache() -> None:
     except Exception as e:
         logger.error(f"⚠️  Could not save cache: {e}")
 
-def load_incremental_tracker() -> None:
-    """Load incremental tracker from file"""
-    if not INCREMENTAL_ENABLED:
+def persist_hash_tracker_state() -> None:
+    """Persist the incremental hash tracker to disk when available."""
+    if not INCREMENTAL_PROCESSING:
         return
 
-    tracker_data = load_json_file(INCREMENTAL_TRACKER_FILE, default={})
-    if tracker_data:
-        incremental_tracker.from_dict(tracker_data)
-        logger.info(f"📊 Loaded incremental tracker: {len(tracker_data.get('file_hashes', {}))} files tracked")
-
-def save_incremental_tracker() -> None:
-    """Save incremental tracker to file"""
-    if not INCREMENTAL_ENABLED:
+    if hash_tracker is None:
         return
 
-    tracker_data = incremental_tracker.to_dict()
-    save_json_file(INCREMENTAL_TRACKER_FILE, tracker_data)
+    with hash_tracker_lock:
+        try:
+            hash_tracker.save()
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning(f"⚠️  Could not persist hash tracker: {exc}")
 
 def get_content_hash(content: str) -> str:
     """Generate hash for content caching"""
@@ -1384,9 +1379,10 @@ Children: None yet"""
         dashboard.add_file_processing_time(file_size_kb, processing_time)
 
     # Update incremental tracker with file hash
-    if INCREMENTAL_ENABLED:
-        content_hash = get_content_hash(content)
-        incremental_tracker.set_hash(file_path, content_hash)
+    if INCREMENTAL_PROCESSING and hash_tracker:
+        with hash_tracker_lock:
+            hash_tracker.update_hash(file_path, success=True)
+        persist_hash_tracker_state()
 
     return True
 
@@ -1577,7 +1573,7 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
         if INCREMENTAL_PROCESSING and hash_tracker:
             with hash_tracker_lock:
                 hash_tracker.update_hash(file_path, success=file_processed)
-                hash_tracker.save()
+            persist_hash_tracker_state()
 
         if file_processed:
             set_file_stage(file_path, 'completed')
@@ -1625,7 +1621,7 @@ def bootstrap_runtime(log_level: str = "INFO") -> RuntimeConfig:
 
 def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
     """Enhanced main processing function"""
-    global dashboard, claude_client
+    global dashboard, claude_client, hash_tracker
 
     runtime_cfg = bootstrap_runtime()
     context = create_processing_context(
@@ -1763,7 +1759,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         all_files = [f for f in all_files if f not in progress_data['processed_files']]
 
     # Filter out unchanged files (incremental processing for 90% faster reruns)
-    if INCREMENTAL_ENABLED and not FORCE_REPROCESS:
+    if INCREMENTAL_PROCESSING and hash_tracker and not FORCE_REPROCESS:
         logger.info("🔍 Checking for unchanged files (incremental processing)...")
         filtered_files = []
         skipped_unchanged = 0
@@ -1771,11 +1767,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
 
         for file_path in all_files:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                current_hash = get_content_hash(content)
-
-                if incremental_tracker.has_changed(file_path, current_hash):
+                if hash_tracker.has_changed(file_path):
                     filtered_files.append(file_path)
                 else:
                     skipped_unchanged += 1
@@ -2008,7 +2000,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 save_progress()
                 with cache_lock:
                     save_cache()
-                save_incremental_tracker()
+                persist_hash_tracker_state()
 
                 logger.info(f"\n📊 File {file_num} complete:")
                 logger.info(f"   ✅ Processed: {stats['processed']}")
@@ -2105,8 +2097,9 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
 
             # Update hash tracker after processing
             if INCREMENTAL_PROCESSING and hash_tracker:
-                hash_tracker.update_hash(file_path, success=file_processed)
-                hash_tracker.save()
+                with hash_tracker_lock:
+                    hash_tracker.update_hash(file_path, success=file_processed)
+                persist_hash_tracker_state()
 
             if file_processed:
                 set_file_stage(file_path, 'completed')
@@ -2114,19 +2107,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 show_progress(current_file, "Completed", processed_count, total_files, start_time)
             else:
                 set_file_stage(file_path, 'completed')  # Still mark as completed even if skipped
-
-            # Save progress after each file
-            save_progress()
-            save_cache()
-
-            # Show progress
-            show_progress(current_file, "Processing", processed_count, total_files, start_time)
-
-            # Process the file
-            if process_conversation(file_path, existing_notes, stats):
-                processed_count += 1
-                show_progress(current_file, "Completed", processed_count, total_files, start_time)
-            else:
                 show_progress(current_file, "Skipped", processed_count, total_files, start_time)
 
             # Save progress after each file
@@ -2140,7 +2120,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             logger.info(f"   ❌ Failed: {stats['failed']}")
             logger.info(f"   🔗 Links added: {stats['links_added']}")
             logger.info(f"   🏷️  Tags added: {stats['tags_added']}")
-            save_incremental_tracker()
+            persist_hash_tracker_state()
 
         # Update dashboard after processing
         if dashboard:
@@ -2151,14 +2131,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 current_file=current_file,
                 current_stage="Completed"
             )
-
-        # Show file summary
-        logger.info(f"\n📊 File {i} complete:")
-        logger.info(f"   ✅ Processed: {stats['processed']}")
-        logger.info(f"   ⏭️  Skipped: {stats['already_processed']}")
-        logger.info(f"   ❌ Failed: {stats['failed']}")
-        logger.info(f"   🔗 Links added: {stats['links_added']}")
-        logger.info(f"   🏷️  Tags added: {stats['tags_added']}")
     
     # Update analytics
     analytics['processed_files'] = stats['processed']

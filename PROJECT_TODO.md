@@ -8,6 +8,9 @@
 
 ## 🎯 High Priority Tasks
 
+### Impact-First Action Plan
+- See `docs/plans/impactful_action_plan.md` for the ranked execution plan (parallelism, bounded cache, link-quality scoring, incremental runs, and operational hardening) to drive the second-brain goals.
+
 ### Testing & Quality Assurance
 
 #### ✅ Completed
@@ -61,6 +64,7 @@
 
 #### 📝 To Do
 - [ ] Create proper script categories (README for scripts/)
+- [ ] New files need to be in a sub folder for organization
 
 ### Code Quality
 
@@ -189,6 +193,11 @@
 - [ ] Memory usage optimization
 - [ ] Database/file I/O optimization
 - [ ] AI request batching
+- [ ] Add bounded cache eviction to prevent runaway memory usage
+- [ ] Turn parallel processing scaffold into true concurrent execution
+- [ ] Implement link-quality scoring to prioritize the strongest connections
+- [ ] Harden resume tracking to survive interruptions
+- [ ] Add incremental processing flow and export dashboard metrics
 
 ---
 
