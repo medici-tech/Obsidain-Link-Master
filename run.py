@@ -103,9 +103,10 @@ def pull_model(model: str) -> None:
 
 def discover_required_models(config: dict) -> List[str]:
     """Inspect the config for model references that should be present."""
+
+    ai_provider = str(config.get("ai_provider", "ollama")).lower()
     candidate_keys = [
         "ollama_model",
-        "embedding_model",
         "primary_ollama_model",
         "secondary_ollama_model",
         "fast_ollama_model",
@@ -113,11 +114,19 @@ def discover_required_models(config: dict) -> List[str]:
         "fallback_model",
         "model",
     ]
+
     models: List[str] = []
-    for key in candidate_keys:
-        value = config.get(key)
-        if isinstance(value, str) and value.strip():
-            models.append(value.strip())
+
+    if ai_provider == "ollama":
+        for key in candidate_keys:
+            value = config.get(key)
+            if isinstance(value, str) and value.strip():
+                models.append(value.strip())
+
+    if config.get("embedding_enabled"):
+        embedding_model = config.get("embedding_model")
+        if isinstance(embedding_model, str) and embedding_model.strip():
+            models.append(embedding_model.strip())
     # Remove duplicates while preserving order
     seen: Set[str] = set()
     deduped: List[str] = []
@@ -165,24 +174,29 @@ def main(argv: Optional[List[str]] = None) -> None:
     LOGGER.info("Ollama base URL: %s", base_url)
 
     started_process: Optional[subprocess.Popen] = None
-    if not is_ollama_ready(base_url):
-        started_process = start_ollama_service()
-        if not wait_for_ollama(base_url):
-            raise RuntimeError("Ollama did not become ready in time")
-    else:
-        LOGGER.info("Ollama is already running")
 
-    ensure_models_available(base_url, required_models, args.skip_model_pulls)
+    try:
+        if not is_ollama_ready(base_url):
+            started_process = start_ollama_service()
+            if not wait_for_ollama(base_url):
+                raise RuntimeError("Ollama did not become ready in time")
+        else:
+            LOGGER.info("Ollama is already running")
 
-    exit_code = run_pipeline(args.config)
+        ensure_models_available(base_url, required_models, args.skip_model_pulls)
 
-    if started_process and started_process.poll() is None:
-        LOGGER.info("Stopping Ollama service started by launcher")
-        started_process.terminate()
-        try:
-            started_process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            started_process.kill()
+        exit_code = run_pipeline(args.config)
+    except Exception as exc:
+        LOGGER.error("Launcher failed: %s", exc)
+        exit_code = 1
+    finally:
+        if started_process and started_process.poll() is None:
+            LOGGER.info("Stopping Ollama service started by launcher")
+            started_process.terminate()
+            try:
+                started_process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                started_process.kill()
 
     sys.exit(exit_code)
 

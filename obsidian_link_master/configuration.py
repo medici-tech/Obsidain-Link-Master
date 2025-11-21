@@ -35,6 +35,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "resume_enabled": True,
     "cache_enabled": True,
     "analytics_enabled": True,
+    "embedding_enabled": False,
+    "embedding_base_url": "http://localhost:11434",
+    "embedding_model": "nomic-embed-text:latest",
+    "embedding_similarity_threshold": 0.7,
+    "embedding_top_k": 12,
     "generate_report": False,
     "interactive_mode": True,
     "incremental_processing": True,
@@ -43,6 +48,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "max_cache_entries": 10000,
     "incremental_tracker_file": ".incremental_tracker.json",
     "confidence_threshold": 0.8,
+    "link_quality_threshold": 0.2,
     "enable_review_queue": True,
     "review_queue_path": "reviews/",
     "dry_run_limit": 10,
@@ -54,10 +60,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "ollama_temperature": 0.1,
     "ollama_max_tokens": 1024,
     "ai_provider": "ollama",
-    "claude_model": "claude-sonnet-4-5-20250929",
+    "claude_model": "claude-3-5-sonnet-20241022",
     "claude_max_tokens": 2048,
     "claude_temperature": 0.1,
     "claude_timeout": 60,
+    "knowledge_graph_file": "knowledge_graph.json",
 }
 
 
@@ -80,6 +87,11 @@ class RuntimeConfig:
     resume_enabled: bool
     cache_enabled: bool
     analytics_enabled: bool
+    embedding_enabled: bool
+    embedding_base_url: str
+    embedding_model: str
+    embedding_similarity_threshold: float
+    embedding_top_k: int
     generate_report: bool
     interactive_mode: bool
     incremental_processing: bool
@@ -88,6 +100,7 @@ class RuntimeConfig:
     max_cache_entries: int
     incremental_tracker_file: str
     confidence_threshold: float
+    link_quality_threshold: float
     enable_review_queue: bool
     review_queue_path: str
     dry_run_limit: int
@@ -104,6 +117,7 @@ class RuntimeConfig:
     claude_max_tokens: int
     claude_temperature: float
     claude_timeout: int
+    knowledge_graph_file: str
 
 
 def load_runtime_config(config_path: str = "config.yaml") -> RuntimeConfig:
@@ -144,6 +158,15 @@ def load_runtime_config(config_path: str = "config.yaml") -> RuntimeConfig:
         resume_enabled=bool(raw_config["resume_enabled"]),
         cache_enabled=bool(raw_config["cache_enabled"]),
         analytics_enabled=bool(raw_config["analytics_enabled"]),
+        embedding_enabled=bool(raw_config["embedding_enabled"]),
+        embedding_base_url=str(
+            raw_config.get("embedding_base_url")
+            or raw_config.get("ollama_base_url")
+            or DEFAULT_CONFIG["embedding_base_url"]
+        ),
+        embedding_model=str(raw_config["embedding_model"]),
+        embedding_similarity_threshold=float(raw_config["embedding_similarity_threshold"]),
+        embedding_top_k=int(raw_config["embedding_top_k"]),
         generate_report=bool(raw_config.get("generate_report", DEFAULT_CONFIG["generate_report"])),
         interactive_mode=bool(raw_config["interactive_mode"]),
         incremental_processing=bool(raw_config["incremental_processing"]),
@@ -152,6 +175,7 @@ def load_runtime_config(config_path: str = "config.yaml") -> RuntimeConfig:
         max_cache_entries=int(raw_config["max_cache_entries"]),
         incremental_tracker_file=str(raw_config["incremental_tracker_file"]),
         confidence_threshold=float(raw_config["confidence_threshold"]),
+        link_quality_threshold=float(raw_config["link_quality_threshold"]),
         enable_review_queue=bool(raw_config["enable_review_queue"]),
         review_queue_path=str(raw_config["review_queue_path"]),
         dry_run_limit=int(raw_config["dry_run_limit"]),
@@ -168,4 +192,5 @@ def load_runtime_config(config_path: str = "config.yaml") -> RuntimeConfig:
         claude_max_tokens=int(raw_config["claude_max_tokens"]),
         claude_temperature=float(raw_config["claude_temperature"]),
         claude_timeout=int(raw_config["claude_timeout"]),
+        knowledge_graph_file=str(raw_config["knowledge_graph_file"]),
     )
