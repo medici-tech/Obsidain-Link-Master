@@ -193,11 +193,11 @@
 - [ ] Memory usage optimization
 - [ ] Database/file I/O optimization
 - [ ] AI request batching
-- [ ] Add bounded cache eviction to prevent runaway memory usage
-- [ ] Turn parallel processing scaffold into true concurrent execution
-- [ ] Implement link-quality scoring to prioritize the strongest connections
-- [ ] Harden resume tracking to survive interruptions
-- [ ] Add incremental processing flow and export dashboard metrics
+- [x] Add bounded cache eviction to prevent runaway memory usage
+- [x] Turn parallel processing scaffold into true concurrent execution
+- [x] Implement link-quality scoring to prioritize the strongest connections
+- [x] Harden resume tracking to survive interruptions
+- [x] Add incremental processing flow and export dashboard metrics
 
 ---
 

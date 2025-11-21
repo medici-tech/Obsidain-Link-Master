@@ -22,7 +22,7 @@ class TestOllamaConfig:
         """Test creating OllamaConfig with defaults"""
         config = OllamaConfig()
         assert config.base_url == "http://localhost:11434"
-        assert config.model == "Qwen3-Embedding-8B:Q8_0"
+        assert config.model == "qwen2.5:3b"
         assert config.timeout == 15
         assert config.max_retries == 1
 

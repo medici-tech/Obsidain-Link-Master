@@ -8,7 +8,7 @@ This directory contains specialized configuration presets for different use case
 - Primary configuration file used by default
 - Balanced settings for general use
 - Edit this file to customize your default behavior
-- Defaults use `Qwen3-Embedding-8B:Q8_0` for Ollama requests
+- Defaults use `qwen2.5:3b` for generation and `nomic-embed-text:latest` for embeddings
 
 ## Specialized Presets
 

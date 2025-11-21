@@ -202,6 +202,14 @@ cp config_conversational_secondbrain.yaml config.yaml
 # embedding_model: nomic-embed-text:latest
 ```
 
+## Prompt checklist (so you know it's wired correctly)
+
+- **System prompt**: "You analyze conversations and create knowledge connections. Return valid JSON only." This keeps the model output strictly structured for linking.
+- **User prompt scaffold**: The tool supplies existing-note titles, a trimmed content sample, the allowed MOC categories, and the exact JSON schema (`moc_category`, `primary_topic`, `hierarchical_tags`, `key_concepts`, `sibling_notes`, `confidence_score`, `reasoning`).
+- **Embedding merges**: When `embedding_enabled: true`, semantic siblings are blended with the AI-generated `sibling_notes` list and scored so only strong links flow into the note footers and exported knowledge graph.
+
+You don’t need to customize these prompts unless you want different JSON keys—just keep the config above for the fully wired conversational "second brain" flow.
+
 ### Step 3: Test with Dry Run
 
 ```bash
@@ -261,8 +269,9 @@ ollama pull nomic-embed-text:latest
 # Use optimized config
 cp config_conversational_secondbrain.yaml config.yaml
 
-# Run
-python3 run.py
+# Run (fails fast if embeddings are offline)
+ollama serve &
+python3 obsidian_auto_linker_enhanced.py
 ```
 
 ## Questions to Ask Yourself
