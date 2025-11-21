@@ -247,7 +247,10 @@ def create_hash_tracker(config: Dict = None) -> FileHashTracker:
     if config is None:
         config = {}
 
-    hash_file = config.get("incremental_hash_file", ".file_hashes.json")
+    hash_file = config.get(
+        "incremental_tracker_file",
+        config.get("incremental_hash_file", ".file_hashes.json"),
+    )
 
     return FileHashTracker(hash_file=hash_file)
 
