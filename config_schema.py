@@ -101,6 +101,12 @@ class ObsidianConfig(BaseModel):
     max_cache_size_mb: int = Field(default=500, ge=1, description="Bounded cache size in MB")
     max_cache_entries: int = Field(default=10000, ge=1, description="Bounded cache entry count")
     confirm_large_batches: bool = Field(default=False)
+    embedding_enabled: bool = Field(default=False, description="Enable embedding-based similarity")
+    embedding_base_url: str = Field(default="http://localhost:11434", description="Embedding API base URL")
+    embedding_model: str = Field(default="nomic-embed-text:latest", description="Embedding model to use")
+    embedding_similarity_threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="Minimum cosine similarity to keep")
+    embedding_top_k: int = Field(default=12, ge=1, le=50, description="How many embedding neighbors to consider")
+    knowledge_graph_file: str = Field(default="knowledge_graph.json", description="Where to export the knowledge graph edges")
 
     # Filtering
     exclude_patterns: List[str] = Field(default_factory=lambda: ["*.tmp", ".*", "_*"])
@@ -154,6 +160,14 @@ class ObsidianConfig(BaseModel):
         """Validate Ollama URL format"""
         if not v.startswith(('http://', 'https://')):
             raise ValueError("ollama_base_url must start with http:// or https://")
+        return v
+
+    @field_validator('embedding_base_url')
+    @classmethod
+    def validate_embedding_url(cls, v: str) -> str:
+        """Validate embedding base URL"""
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError("embedding_base_url must start with http:// or https://")
         return v
 
     @model_validator(mode='after')

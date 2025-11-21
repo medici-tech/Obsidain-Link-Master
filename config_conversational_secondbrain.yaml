@@ -39,6 +39,7 @@ incremental: true
 link_quality_threshold: 0.25  # Filter out weak sibling suggestions
 max_cache_size_mb: 1500  # Moderate cache for conversational content
 max_cache_entries: 15000
+knowledge_graph_file: knowledge_graph.json  # Exported graph of linked conversations
 
 # === ADVANCED (Optional) ===
 # Confidence threshold for manual review

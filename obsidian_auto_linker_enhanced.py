@@ -47,6 +47,7 @@ from live_dashboard import LiveDashboard
 from logger_config import get_logger, setup_logging
 from obsidian_link_master.configuration import DEFAULT_CONFIG, RuntimeConfig, load_runtime_config
 from scripts.cache_utils import BoundedCache
+from scripts.embedding_similarity import EmbeddingManager
 from scripts.incremental_processing import FileHashTracker, create_hash_tracker
 
 DEFAULT_CONFIG = {
@@ -66,6 +67,11 @@ DEFAULT_CONFIG = {
     'cache_enabled': True,
     'analytics_enabled': True,
     'interactive_mode': True,
+    'embedding_enabled': False,
+    'embedding_base_url': 'http://localhost:11434',
+    'embedding_model': 'nomic-embed-text:latest',
+    'embedding_similarity_threshold': 0.7,
+    'embedding_top_k': 12,
     'incremental_processing': True,
     'incremental': True,
     'max_cache_size_mb': 1000,
@@ -87,6 +93,7 @@ DEFAULT_CONFIG = {
     'claude_max_tokens': 2048,
     'claude_temperature': 0.1,
     'claude_timeout': 60,
+    'knowledge_graph_file': 'knowledge_graph.json',
 }
 
 
@@ -110,6 +117,11 @@ class RuntimeConfig:
     cache_enabled: bool
     analytics_enabled: bool
     interactive_mode: bool
+    embedding_enabled: bool
+    embedding_base_url: str
+    embedding_model: str
+    embedding_similarity_threshold: float
+    embedding_top_k: int
     incremental_processing: bool
     incremental: bool
     max_cache_size_mb: int
@@ -132,6 +144,7 @@ class RuntimeConfig:
     claude_max_tokens: int
     claude_temperature: float
     claude_timeout: int
+    knowledge_graph_file: str
 
 
 def _load_runtime_config(config_path: str = 'config.yaml') -> RuntimeConfig:
@@ -174,6 +187,11 @@ def _load_runtime_config(config_path: str = 'config.yaml') -> RuntimeConfig:
         cache_enabled=bool(raw_config['cache_enabled']),
         analytics_enabled=bool(raw_config['analytics_enabled']),
         interactive_mode=bool(raw_config['interactive_mode']),
+        embedding_enabled=bool(raw_config['embedding_enabled']),
+        embedding_base_url=str(raw_config.get('embedding_base_url', raw_config['ollama_base_url'])),
+        embedding_model=str(raw_config['embedding_model']),
+        embedding_similarity_threshold=float(raw_config['embedding_similarity_threshold']),
+        embedding_top_k=int(raw_config['embedding_top_k']),
         incremental_processing=bool(raw_config['incremental_processing']),
         incremental=bool(raw_config['incremental']),
         max_cache_size_mb=int(raw_config['max_cache_size_mb']),
@@ -196,6 +214,7 @@ def _load_runtime_config(config_path: str = 'config.yaml') -> RuntimeConfig:
         claude_max_tokens=int(raw_config['claude_max_tokens']),
         claude_temperature=float(raw_config['claude_temperature']),
         claude_timeout=int(raw_config['claude_timeout']),
+        knowledge_graph_file=str(raw_config['knowledge_graph_file']),
     )
 
 
@@ -253,6 +272,11 @@ INCREMENTAL_PROCESSING = runtime_config.incremental_processing
 FORCE_REPROCESS = runtime_config.force_reprocess
 INTERACTIVE_MODE = runtime_config.interactive_mode
 ANALYTICS_ENABLED = runtime_config.analytics_enabled
+EMBEDDING_ENABLED = runtime_config.embedding_enabled
+EMBEDDING_BASE_URL = runtime_config.embedding_base_url
+EMBEDDING_MODEL = runtime_config.embedding_model
+EMBEDDING_THRESHOLD = runtime_config.embedding_similarity_threshold
+EMBEDDING_TOP_K = runtime_config.embedding_top_k
 
 # Cache configuration
 MAX_CACHE_SIZE_MB = runtime_config.max_cache_size_mb
@@ -290,6 +314,7 @@ CLAUDE_MODEL = runtime_config.claude_model
 CLAUDE_MAX_TOKENS = runtime_config.claude_max_tokens
 CLAUDE_TEMPERATURE = runtime_config.claude_temperature
 CLAUDE_TIMEOUT = runtime_config.claude_timeout
+KNOWLEDGE_GRAPH_FILE = runtime_config.knowledge_graph_file
 
 # Initialize Claude client lazily
 claude_client = None
@@ -633,9 +658,13 @@ cache_lock = threading.RLock()  # Reentrant lock for nested cache operations
 progress_lock = threading.RLock()
 analytics_lock = threading.RLock()
 hash_tracker_lock = threading.RLock()
+embedding_lock = threading.RLock()
 
 # Incremental processing tracker (FileHashTracker is instantiated in main)
 hash_tracker: Optional[FileHashTracker] = None
+# Embedding manager (initialized when embedding_enabled is true)
+embedding_manager: Optional[EmbeddingManager] = None
+note_corpus: Dict[str, str] = {}
 
 # 12 MOC System (enhanced with custom support)
 MOCS = {
@@ -865,15 +894,19 @@ def rank_sibling_candidates(
     *,
     limit: int = MAX_SIBLINGS,
     threshold: float = LINK_QUALITY_THRESHOLD,
+    embedding_scores: Optional[Dict[str, float]] = None,
 ) -> list[tuple[str, float]]:
     """Rank sibling candidates by a transparent similarity score."""
 
+    embedding_scores = embedding_scores or {}
     scored = []
     for note in sibling_notes:
         preview = existing_notes.get(note)
         if not preview:
             continue
-        score = _score_similarity(main_content, preview)
+        text_score = _score_similarity(main_content, preview)
+        hybrid_score = max(text_score, embedding_scores.get(note, 0.0))
+        score = hybrid_score
         scored.append((note, score))
 
     scored.sort(key=lambda item: item[1], reverse=True)
@@ -934,6 +967,36 @@ def get_all_notes(vault_path: str) -> Dict[str, str]:
                     logger.debug(f"Could not read {file}: {e}")
                     continue
     return notes
+
+
+def load_note_corpus(vault_path: str, *, include_content: bool = True) -> Dict[str, str]:
+    """Load full note corpus for embedding-based similarity."""
+
+    if not EMBEDDING_ENABLED:
+        return {}
+
+    corpus: Dict[str, str] = {}
+    for root, _, files in os.walk(vault_path):
+        if config.get('backup_folder', '_backups') in root:
+            continue
+
+        for file in files:
+            if not file.endswith('.md'):
+                continue
+
+            file_path = os.path.join(root, file)
+            if not should_process_file(file_path):
+                continue
+
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    corpus[file_path] = content if include_content else content[:800]
+            except (UnicodeDecodeError, IOError, OSError) as exc:
+                logger.debug(f"Could not read {file_path} for embedding corpus: {exc}")
+                continue
+
+    return corpus
 
 
 class ObsidianAutoLinker:
@@ -1234,7 +1297,12 @@ Once you've reviewed and corrected the analysis, you can:
     except Exception as e:
         logger.info(f"  ❌ Failed to create review file: {e}")
 
-def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: Dict) -> bool:
+def process_conversation(
+    file_path: str,
+    existing_notes: Dict[str, str],
+    stats: Dict,
+    note_corpus: Optional[Dict[str, str]] = None,
+) -> bool:
     """Process single conversation file with enhanced error handling"""
 
     filename = os.path.basename(file_path)
@@ -1339,17 +1407,48 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     key_concepts = ai_result.get('key_concepts', [])
     sibling_notes = ai_result.get('sibling_notes', [])
 
+    embedding_scores: Dict[str, float] = ai_result.get('embedding_similarity_scores', {})
+    if EMBEDDING_ENABLED and embedding_manager and note_corpus is not None:
+        similar_notes = embedding_manager.find_similar_notes(
+            file_path,
+            content,
+            note_corpus,
+        )
+        embedding_scores.update({note: score for note, score in similar_notes})
+
+        for candidate, _ in similar_notes:
+            if candidate not in sibling_notes:
+                sibling_notes.append(candidate)
+
+        with analytics_lock:
+            analytics['embedding_candidates'] += len(similar_notes)
+
     # Extract main content (before any existing footer)
     main_content = re.split(r'\n---\n## 📊 METADATA', content)[0].strip()
 
     ranked_siblings = rank_sibling_candidates(
-        main_content, sibling_notes, existing_notes, limit=MAX_SIBLINGS
+        main_content,
+        sibling_notes,
+        existing_notes,
+        limit=MAX_SIBLINGS,
+        embedding_scores=embedding_scores,
     )
     verified_siblings = [f"[[{note}]] ({score:.0%})" for note, score in ranked_siblings]
 
     if ranked_siblings:
         with analytics_lock:
             analytics['link_quality_scores'].extend(score for _, score in ranked_siblings)
+            source_node = Path(file_path).stem
+            for note, score in ranked_siblings:
+                edge = {
+                    'source': source_node,
+                    'target': note,
+                    'score': score,
+                    'via_embedding': note in embedding_scores and embedding_scores[note] >= score,
+                }
+                if edge['via_embedding']:
+                    analytics['embedding_links'] += 1
+                analytics['knowledge_graph_edges'].append(edge)
 
     # Build footer sections
     parent_moc = MOCS.get(moc_category, MOCS['Life & Misc'])
@@ -1452,7 +1551,12 @@ Children: None yet"""
 
     return True
 
-def process_batch(files: List[str], existing_notes: Dict[str, str], stats: Dict) -> Dict:
+def process_batch(
+    files: List[str],
+    existing_notes: Dict[str, str],
+    stats: Dict,
+    note_corpus: Optional[Dict[str, str]] = None,
+) -> Dict:
     """Process a batch of files"""
     batch_stats = {
         'processed': 0,
@@ -1464,7 +1568,7 @@ def process_batch(files: List[str], existing_notes: Dict[str, str], stats: Dict)
     }
 
     for file_path in files:
-        if process_conversation(file_path, existing_notes, batch_stats):
+        if process_conversation(file_path, existing_notes, batch_stats, note_corpus):
             batch_stats['processed'] += 1
 
     return batch_stats
@@ -1531,6 +1635,24 @@ def generate_analytics_report() -> None:
     with open(analytics_file, 'w') as f:
         json.dump(analytics, f, indent=2, default=str)
 
+    # Persist knowledge graph edges for downstream visualization
+    if analytics.get('knowledge_graph_edges'):
+        nodes = sorted({edge['source'] for edge in analytics['knowledge_graph_edges']} |
+                       {edge['target'] for edge in analytics['knowledge_graph_edges']})
+        graph_payload = {
+            'nodes': nodes,
+            'edges': analytics['knowledge_graph_edges'],
+        }
+        graph_file = config.get('knowledge_graph_file', KNOWLEDGE_GRAPH_FILE)
+        with open(graph_file, 'w', encoding='utf-8') as graph_f:
+            json.dump(graph_payload, graph_f, indent=2)
+        logger.info(
+            "🌐 Knowledge graph exported to %s (%s nodes, %s edges)",
+            graph_file,
+            len(nodes),
+            len(graph_payload['edges']),
+        )
+
     # Generate HTML report if explicitly requested
     if not config.get('generate_report', True):
         logger.info("Skipping HTML analytics report; CLI dashboard already provides live metrics."
@@ -1567,6 +1689,8 @@ def generate_analytics_report() -> None:
         <div class="metric"><strong>Low Confidence Files:</strong> {analytics.get('low_confidence_files', 0)}</div>
         <div class="metric"><strong>Review Queue:</strong> {analytics.get('review_queue_count', 0)} files flagged for manual review</div>
         <div class="metric"><strong>Link Quality:</strong> avg {analytics['link_quality_summary']['average']*100:.0f}% • best {analytics['link_quality_summary']['best']*100:.0f}% • {analytics['link_quality_summary']['count']} ranked links</div>
+        <div class="metric"><strong>Embedding Links:</strong> {analytics.get('embedding_links', 0)} (corpus {analytics.get('embedding_corpus_size', 0)} notes)</div>
+        <div class="metric"><strong>Knowledge Graph Edges:</strong> {len(analytics.get('knowledge_graph_edges', []))}</div>
     </div>
 
     <div class="chart">
@@ -1606,7 +1730,16 @@ def generate_analytics_report() -> None:
 
     logger.info(f"📊 Analytics report saved to: analytics_report.html")
 
-def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_num, total_files, start_time):
+def process_file_wrapper(
+    file_path,
+    existing_notes,
+    stats,
+    hash_tracker,
+    note_corpus,
+    file_num,
+    total_files,
+    start_time,
+):
     """
     Thread-safe wrapper for processing a single file
     Used by ThreadPoolExecutor for parallel processing
@@ -1646,7 +1779,12 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
 
         # Process the file (this includes linking)
         set_file_stage(file_path, 'linking')
-        file_processed = process_conversation(file_path, existing_notes, stats)
+        file_processed = process_conversation(
+            file_path,
+            existing_notes,
+            stats,
+            note_corpus,
+        )
 
         # Update hash tracker after processing
         if INCREMENTAL_PROCESSING and hash_tracker:
@@ -1700,7 +1838,7 @@ def bootstrap_runtime(log_level: str = "INFO") -> RuntimeConfig:
 
 def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) -> None:
     """Enhanced main processing function"""
-    global dashboard, claude_client, hash_tracker
+    global dashboard, claude_client, hash_tracker, embedding_manager, note_corpus
 
     runtime_cfg = bootstrap_runtime()
     context = create_processing_context(
@@ -1759,15 +1897,11 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     start_time = datetime.now()
     processed_count = 0
 
-    # Test Ollama connection first
-    logger.info("🔍 Testing Ollama connection...")
-    logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
-    test_response = call_ollama("Hello", "You are a helpful assistant.", context=context)
-
     # Test AI provider connection first
     logger.info(f"🔍 Testing {AI_PROVIDER.upper()} connection...")
     if AI_PROVIDER == 'ollama':
         logger.info("   ⏳ This may take 2-3 minutes for local models (this is normal)...")
+
     test_response = call_ai_provider("Hello", "You are a helpful assistant.", context=context)
     if not test_response:
         if AI_PROVIDER == 'claude':
@@ -1778,6 +1912,13 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             logger.info("   Try: ollama serve")
             logger.info(f"   Then: ollama pull {OLLAMA_MODEL}")
         return
+
+    if AI_PROVIDER == 'claude':
+        logger.info(f"✅ Claude API connection successful")
+        logger.info(f"   🤖 Using model: {CLAUDE_MODEL}")
+        logger.info(f"   ⚡ Claude is fast (5-10 seconds per file)")
+        logger.info(f"   ⏱️  Timeout: {CLAUDE_TIMEOUT}s")
+        logger.info(f"   📝 Max tokens: {CLAUDE_MAX_TOKENS}")
     else:
         logger.info("✅ Ollama connection successful")
         logger.info("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
@@ -1790,34 +1931,33 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     if testing_mode:
         logger.info("Testing mode enabled – exiting after provider connectivity checks")
         return
-
-        if AI_PROVIDER == 'claude':
-            logger.info(f"✅ Claude API connection successful")
-            logger.info(f"   🤖 Using model: {CLAUDE_MODEL}")
-            logger.info(f"   ⚡ Claude is fast (5-10 seconds per file)")
-            logger.info(f"✅ Claude API connection successful")
-            logger.info(f"   🤖 Using model: {CLAUDE_MODEL}")
-            logger.info(f"   ⚡ Claude is fast (5-10 seconds per file)")
-            logger.info(f"   ⏱️  Timeout: {CLAUDE_TIMEOUT}s")
-            logger.info(f"   📝 Max tokens: {CLAUDE_MAX_TOKENS}")
-        else:
-            logger.info("✅ Ollama connection successful")
-            logger.info("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
-            logger.info(f"   🤖 Using model: {OLLAMA_MODEL}")
-            logger.info("✅ Ollama connection successful")
-            logger.info("   🐌 Note: Local models are slow (2-3 minutes per file is normal)")
-            logger.info(f"   🤖 Using model: {OLLAMA_MODEL}")
-            logger.info(f"   ⏱️  Base timeout: {OLLAMA_TIMEOUT}s (extended for complex reasoning)")
-            logger.info(f"   🔄 Max retries: {OLLAMA_MAX_RETRIES} (progressive timeouts: +3min per retry)")
-            logger.info(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
-            logger.info(f"   🧠 Extended timeouts prevent reasoning interruptions")
     
     # Scan vault
     logger.info("🔍 Scanning vault...")
     logger.info(f"   Vault path: {VAULT_PATH}")
     existing_notes = get_all_notes(VAULT_PATH)
     logger.info(f"   Found {len(existing_notes)} existing notes")
-    logger.info(f"   Found {len(existing_notes)} existing notes")
+
+    # Prepare embedding manager and corpus for hybrid similarity
+    if EMBEDDING_ENABLED:
+        with embedding_lock:
+            embedding_manager = EmbeddingManager({
+                'embedding_base_url': EMBEDDING_BASE_URL,
+                'embedding_model': EMBEDDING_MODEL,
+                'embedding_enabled': EMBEDDING_ENABLED,
+                'embedding_similarity_threshold': EMBEDDING_THRESHOLD,
+                'embedding_top_k': EMBEDDING_TOP_K,
+                'vault_path': VAULT_PATH,
+            })
+            note_corpus = load_note_corpus(VAULT_PATH)
+            analytics['embedding_corpus_size'] = len(note_corpus)
+            logger.info(
+                "🧠 Embedding similarity enabled (%s, %.0f%% threshold, top %s). Corpus: %s notes",
+                EMBEDDING_MODEL,
+                EMBEDDING_THRESHOLD * 100,
+                EMBEDDING_TOP_K,
+                len(note_corpus),
+            )
 
     # Create MOC notes if needed
     logger.info("\n📚 Checking MOC notes...")
@@ -1878,7 +2018,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info(f"📋 Ordering files by: {FILE_ORDERING}")
     all_files = order_files(all_files, FILE_ORDERING)
 
-    logger.info(f"   Found {len(all_files)} markdown files to process")
     logger.info(f"   Found {len(all_files)} markdown files to process")
 
     # Set total files for progress tracking
@@ -2058,6 +2197,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                     existing_notes,
                     stats,
                     hash_tracker,
+                    note_corpus,
                     i,
                     len(all_files),
                     start_time
@@ -2177,7 +2317,12 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
 
             # Process the file (this includes linking)
             set_file_stage(file_path, 'linking')
-            file_processed = process_conversation(file_path, existing_notes, stats)
+            file_processed = process_conversation(
+                file_path,
+                existing_notes,
+                stats,
+                note_corpus,
+            )
 
             # Update hash tracker after processing
             if INCREMENTAL_PROCESSING and hash_tracker:
@@ -2250,6 +2395,16 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
             avg_quality * 100,
             best_quality * 100,
             len(analytics['link_quality_scores']),
+        )
+    if EMBEDDING_ENABLED:
+        logger.info(
+            "🧠 Embedding links: %s (corpus: %s notes, threshold %.0f%%)",
+            analytics.get('embedding_links', 0),
+            analytics.get('embedding_corpus_size', 0),
+            EMBEDDING_THRESHOLD * 100,
+        )
+        logger.info(
+            "🌐 Knowledge graph edges persisted: %s", len(analytics.get('knowledge_graph_edges', []))
         )
     logger.info(
         "🧵 Parallel mode summary: %s (requested=%s, effective=%s)",
