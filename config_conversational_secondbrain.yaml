@@ -36,6 +36,7 @@ embedding_top_k: 15  # More suggestions for richer connections
 cache_enabled: true
 resume_enabled: true
 incremental: true
+link_quality_threshold: 0.25  # Filter out weak sibling suggestions
 max_cache_size_mb: 1500  # Moderate cache for conversational content
 max_cache_entries: 15000
 
