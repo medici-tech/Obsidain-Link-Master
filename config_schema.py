@@ -95,6 +95,11 @@ class ObsidianConfig(BaseModel):
     # Features
     cache_enabled: bool = Field(default=True)
     resume_enabled: bool = Field(default=True)
+    incremental: bool = Field(default=False, description="Enable incremental processing")
+    incremental_tracker_file: str = Field(default=".file_hashes.json", description="Where to persist incremental hashes")
+    link_quality_threshold: float = Field(default=0.2, ge=0.0, le=1.0, description="Minimum sibling similarity score to keep")
+    max_cache_size_mb: int = Field(default=500, ge=1, description="Bounded cache size in MB")
+    max_cache_entries: int = Field(default=10000, ge=1, description="Bounded cache entry count")
     confirm_large_batches: bool = Field(default=False)
 
     # Filtering

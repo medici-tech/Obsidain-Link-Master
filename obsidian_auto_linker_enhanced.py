@@ -266,6 +266,7 @@ if INCREMENTAL_ENABLED:
 CONFIDENCE_THRESHOLD = runtime_config.confidence_threshold
 ENABLE_REVIEW_QUEUE = runtime_config.enable_review_queue
 REVIEW_QUEUE_PATH = runtime_config.review_queue_path
+LINK_QUALITY_THRESHOLD = float(config.get('link_quality_threshold', 0.2))
 
 # Dry run settings
 DRY_RUN_LIMIT = runtime_config.dry_run_limit
@@ -592,7 +593,23 @@ analytics = {
     'error_types': {},
     'retry_attempts': 0,
     'cache_hits': 0,
-    'cache_misses': 0
+    'cache_misses': 0,
+    'link_quality_scores': [],
+    'skipped_unchanged': 0,
+    'cache_evictions': 0,
+    'link_quality_summary': {
+        'average': 0.0,
+        'best': 0.0,
+        'count': 0,
+    },
+    'incremental_summary': {
+        'unchanged_files': 0,
+        'changed_files': 0,
+        'new_files': 0,
+        'deleted_files': 0,
+        'total_tracked_files': 0,
+        'skip_rate': 0,
+    },
 }
 
 # Progress tracking
@@ -819,6 +836,52 @@ def persist_hash_tracker_state() -> None:
 def get_content_hash(content: str) -> str:
     """Generate hash for content caching"""
     return hashlib.md5(content.encode()).hexdigest()
+
+
+def _tokenize_for_similarity(text: str) -> set[str]:
+    """Lightweight tokenizer for link-quality scoring."""
+
+    tokens = re.findall(r"[a-zA-Z]{4,}", text.lower())
+    return set(tokens)
+
+
+def _score_similarity(source: str, target: str) -> float:
+    """Compute an overlap-based similarity score for two note snippets."""
+
+    source_tokens = _tokenize_for_similarity(source)
+    target_tokens = _tokenize_for_similarity(target)
+
+    if not source_tokens or not target_tokens:
+        return 0.0
+
+    overlap = len(source_tokens & target_tokens)
+    return overlap / max(len(source_tokens), len(target_tokens))
+
+
+def rank_sibling_candidates(
+    main_content: str,
+    sibling_notes: list[str],
+    existing_notes: Dict[str, str],
+    *,
+    limit: int = MAX_SIBLINGS,
+    threshold: float = LINK_QUALITY_THRESHOLD,
+) -> list[tuple[str, float]]:
+    """Rank sibling candidates by a transparent similarity score."""
+
+    scored = []
+    for note in sibling_notes:
+        preview = existing_notes.get(note)
+        if not preview:
+            continue
+        score = _score_similarity(main_content, preview)
+        scored.append((note, score))
+
+    scored.sort(key=lambda item: item[1], reverse=True)
+
+    if threshold > 0:
+        scored = [item for item in scored if item[1] >= threshold]
+
+    return scored[:limit]
 
 def should_process_file(file_path: str) -> bool:
     """Check if file should be processed based on filters"""
@@ -1276,11 +1339,17 @@ def process_conversation(file_path: str, existing_notes: Dict[str, str], stats: 
     key_concepts = ai_result.get('key_concepts', [])
     sibling_notes = ai_result.get('sibling_notes', [])
 
-    # Verify sibling notes exist
-    verified_siblings = []
-    for note in sibling_notes[:MAX_SIBLINGS]:
-        if note in existing_notes:
-            verified_siblings.append(f"[[{note}]]")
+    # Extract main content (before any existing footer)
+    main_content = re.split(r'\n---\n## 📊 METADATA', content)[0].strip()
+
+    ranked_siblings = rank_sibling_candidates(
+        main_content, sibling_notes, existing_notes, limit=MAX_SIBLINGS
+    )
+    verified_siblings = [f"[[{note}]] ({score:.0%})" for note, score in ranked_siblings]
+
+    if ranked_siblings:
+        with analytics_lock:
+            analytics['link_quality_scores'].extend(score for _, score in ranked_siblings)
 
     # Build footer sections
     parent_moc = MOCS.get(moc_category, MOCS['Life & Misc'])
@@ -1304,9 +1373,6 @@ Children: None yet"""
     tags_section = f"""## 🏷️ TAGS
 
 {' '.join([f'#{tag}' for tag in hierarchical_tags[:5]])}"""
-
-    # Extract main content (before any existing footer)
-    main_content = re.split(r'\n---\n## 📊 METADATA', content)[0].strip()
 
     # Build new complete content
     new_content = f"""{main_content}
@@ -1500,6 +1566,7 @@ def generate_analytics_report() -> None:
         <div class="metric"><strong>Processing Time:</strong> {analytics['processing_time']:.1f} seconds</div>
         <div class="metric"><strong>Low Confidence Files:</strong> {analytics.get('low_confidence_files', 0)}</div>
         <div class="metric"><strong>Review Queue:</strong> {analytics.get('review_queue_count', 0)} files flagged for manual review</div>
+        <div class="metric"><strong>Link Quality:</strong> avg {analytics['link_quality_summary']['average']*100:.0f}% • best {analytics['link_quality_summary']['best']*100:.0f}% • {analytics['link_quality_summary']['count']} ranked links</div>
     </div>
 
     <div class="chart">
@@ -1513,7 +1580,17 @@ def generate_analytics_report() -> None:
         <h2>⚡ Performance Metrics</h2>
         <div class="metric"><strong>Cache Hits:</strong> {analytics['cache_hits']}</div>
         <div class="metric"><strong>Cache Misses:</strong> {analytics['cache_misses']}</div>
+        <div class="metric"><strong>Cache Evictions:</strong> {analytics.get('cache_evictions', 0)}</div>
         <div class="metric"><strong>Retry Attempts:</strong> {analytics['retry_attempts']}</div>
+    </div>
+
+    <div class="chart">
+        <h2>📝 Incremental Processing</h2>
+        <div class="metric"><strong>Skipped (unchanged):</strong> {analytics['incremental_summary']['unchanged_files']} files ({analytics['incremental_summary']['skip_rate']}% skip rate)</div>
+        <div class="metric"><strong>Changed:</strong> {analytics['incremental_summary']['changed_files']} files</div>
+        <div class="metric"><strong>New:</strong> {analytics['incremental_summary']['new_files']} files</div>
+        <div class="metric"><strong>Deleted (cleanup):</strong> {analytics['incremental_summary']['deleted_files']} files</div>
+        <div class="metric"><strong>Total Tracked:</strong> {analytics['incremental_summary']['total_tracked_files']} files</div>
     </div>
 
     <div class="chart">
@@ -1556,6 +1633,8 @@ def process_file_wrapper(file_path, existing_notes, stats, hash_tracker, file_nu
                     logger.info(f"  ⏭️  {current_file}: Skipping (unchanged)")
                     with progress_lock:
                         stats['already_processed'] += 1
+                    with analytics_lock:
+                        analytics['skipped_unchanged'] += 1
                     set_file_stage(file_path, 'completed')  # Mark as completed (unchanged)
                     return (file_path, True, 'unchanged', threading.current_thread().name)
 
@@ -1659,6 +1738,9 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     if INCREMENTAL_PROCESSING:
         hash_tracker = create_hash_tracker(config)
         logger.info(f"📝 Incremental processing enabled")
+        cleaned = hash_tracker.clean_deleted_files()
+        if cleaned:
+            logger.info(f"   🧹 Removed {cleaned} deleted files from tracker")
         logger.info(f"   Tracking {len(hash_tracker)} files from previous runs")
         if FORCE_REPROCESS:
             logger.info(f"   ⚠️  Force reprocess enabled - will process all files")
@@ -2082,6 +2164,8 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 if not hash_tracker.has_changed(file_path):
                     logger.info(f"  ⏭️  Skipping (unchanged since last run)")
                     stats['already_processed'] += 1
+                    with analytics_lock:
+                        analytics['skipped_unchanged'] += 1
                     set_file_stage(file_path, 'completed')  # Mark as completed (unchanged)
                     continue
 
@@ -2152,16 +2236,50 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info(f"❌ Failed: {stats['failed']}")
     logger.info(f"⚠️  Low confidence files: {analytics.get('low_confidence_files', 0)} (below {CONFIDENCE_THRESHOLD:.0%} threshold)")
     logger.info(f"📋 Review queue: {analytics.get('review_queue_count', 0)} files flagged for manual review")
+    if analytics['link_quality_scores']:
+        avg_quality = sum(analytics['link_quality_scores']) / len(analytics['link_quality_scores'])
+        best_quality = max(analytics['link_quality_scores'])
+        analytics['link_quality_summary'] = {
+            'average': avg_quality,
+            'best': best_quality,
+            'count': len(analytics['link_quality_scores']),
+        }
+        logger.info(
+            "🔗 Link quality (>= %.0f%% threshold): avg %.0f%% • best %.0f%% • %s ranked links",
+            LINK_QUALITY_THRESHOLD * 100,
+            avg_quality * 100,
+            best_quality * 100,
+            len(analytics['link_quality_scores']),
+        )
     logger.info(
         "🧵 Parallel mode summary: %s (requested=%s, effective=%s)",
         "ON" if PARALLEL_MODE_ACTIVE else "OFF",
         REQUESTED_PARALLEL_WORKERS,
         PARALLEL_EFFECTIVE_WORKERS,
     )
+    if hasattr(ai_cache, 'get_stats'):
+        cache_stats = ai_cache.get_stats()
+        analytics['cache_evictions'] = cache_stats.get('evictions', 0)
+        logger.info(
+            "💾 Cache usage: %s/%s entries • %.2f/%.2f MB • evictions: %s",
+            cache_stats['entries'],
+            cache_stats['max_entries'],
+            cache_stats['size_mb'],
+            cache_stats['max_size_mb'],
+            cache_stats.get('evictions', 0),
+        )
 
     # Incremental processing stats
     if INCREMENTAL_PROCESSING and hash_tracker:
         inc_stats = hash_tracker.get_stats()
+        analytics['incremental_summary'] = {
+            'unchanged_files': inc_stats['unchanged_files'],
+            'changed_files': inc_stats['changed_files'],
+            'new_files': inc_stats['new_files'],
+            'deleted_files': inc_stats['deleted_files'],
+            'total_tracked_files': inc_stats['total_tracked_files'],
+            'skip_rate': inc_stats['skip_rate'],
+        }
         print(f"\n📝 Incremental Processing:")
         logger.info(f"   ⏭️  Skipped (unchanged): {inc_stats['unchanged_files']} files ({inc_stats['skip_rate']}% skip rate)")
         logger.info(f"   🔄 Changed: {inc_stats['changed_files']} files")
