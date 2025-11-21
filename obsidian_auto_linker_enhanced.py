@@ -1868,6 +1868,9 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     """Enhanced main processing function"""
     global dashboard, claude_client, hash_tracker, embedding_manager, note_corpus
 
+    # Ensure the processing context symbol exists even if initialization fails early
+    context: ProcessingContext = DEFAULT_PROCESSING_CONTEXT
+
     runtime_cfg = bootstrap_runtime()
     context = create_processing_context(
         enable_dashboard=enable_dashboard,
