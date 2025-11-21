@@ -1959,10 +1959,6 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         logger.info(f"   📝 Max tokens: {OLLAMA_MAX_TOKENS} (detailed responses)")
         logger.info(f"   🧠 Extended timeouts prevent reasoning interruptions")
 
-    if testing_mode:
-        logger.info("Testing mode enabled – exiting after provider connectivity checks")
-        return
-
     if EMBEDDING_ENABLED:
         logger.info("🔍 Probing embedding backend at %s...", EMBEDDING_BASE_URL)
         if not verify_embedding_backend(EMBEDDING_BASE_URL, EMBEDDING_MODEL):
