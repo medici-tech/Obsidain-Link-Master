@@ -619,6 +619,10 @@ analytics = {
     'retry_attempts': 0,
     'cache_hits': 0,
     'cache_misses': 0,
+    'embedding_candidates': 0,
+    'embedding_links': 0,
+    'embedding_corpus_size': 0,
+    'knowledge_graph_edges': [],
     'link_quality_scores': [],
     'skipped_unchanged': 0,
     'cache_evictions': 0,
@@ -665,6 +669,30 @@ hash_tracker: Optional[FileHashTracker] = None
 # Embedding manager (initialized when embedding_enabled is true)
 embedding_manager: Optional[EmbeddingManager] = None
 note_corpus: Dict[str, str] = {}
+
+
+def verify_embedding_backend(base_url: str, model: str, timeout: int = 15) -> bool:
+    """Lightweight readiness probe for the embeddings API."""
+
+    probe_url = f"{base_url.rstrip('/')}/api/embeddings"
+    payload = {"model": model, "prompt": "health check"}
+
+    try:
+        start = time.time()
+        response = requests.post(probe_url, json=payload, timeout=timeout)
+        response.raise_for_status()
+        embedding = response.json().get('embedding')
+
+        if not embedding:
+            logger.error("❌ Embedding backend responded but returned no vector. Check model availability (%s).", model)
+            return False
+
+        logger.info("✅ Embedding backend ready (%s) in %.1fs", model, time.time() - start)
+        return True
+    except requests.RequestException as exc:
+        logger.error("❌ Embedding backend unavailable at %s: %s", probe_url, exc)
+        logger.info("   Ensure your embeddings host is running (e.g., `ollama serve`) and pull the model: ollama pull %s", model)
+        return False
 
 # 12 MOC System (enhanced with custom support)
 MOCS = {
@@ -1931,7 +1959,13 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     if testing_mode:
         logger.info("Testing mode enabled – exiting after provider connectivity checks")
         return
-    
+
+    if EMBEDDING_ENABLED:
+        logger.info("🔍 Probing embedding backend at %s...", EMBEDDING_BASE_URL)
+        if not verify_embedding_backend(EMBEDDING_BASE_URL, EMBEDDING_MODEL):
+            logger.error("Embedding check failed; start the embeddings host or set embedding_enabled: false in config.yaml")
+            return
+
     # Scan vault
     logger.info("🔍 Scanning vault...")
     logger.info(f"   Vault path: {VAULT_PATH}")
