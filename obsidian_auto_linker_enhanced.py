@@ -89,11 +89,12 @@ DEFAULT_CONFIG = {
     'ollama_temperature': 0.1,
     'ollama_max_tokens': 1024,
     'ai_provider': 'ollama',
-    'claude_model': 'claude-sonnet-4-5-20250929',
+    'claude_model': 'claude-3-5-sonnet-20241022',
     'claude_max_tokens': 2048,
     'claude_temperature': 0.1,
     'claude_timeout': 60,
     'knowledge_graph_file': 'knowledge_graph.json',
+    'link_quality_threshold': 0.2,
 }
 
 
@@ -130,6 +131,7 @@ class RuntimeConfig:
     confidence_threshold: float
     enable_review_queue: bool
     review_queue_path: str
+    link_quality_threshold: float
     dry_run_limit: int
     dry_run_interactive: bool
     ollama_base_url: str
@@ -198,6 +200,7 @@ def _load_runtime_config(config_path: str = 'config.yaml') -> RuntimeConfig:
         max_cache_entries=int(raw_config['max_cache_entries']),
         incremental_tracker_file=str(raw_config['incremental_tracker_file']),
         confidence_threshold=float(raw_config['confidence_threshold']),
+        link_quality_threshold=float(raw_config['link_quality_threshold']),
         enable_review_queue=bool(raw_config['enable_review_queue']),
         review_queue_path=str(raw_config['review_queue_path']),
         dry_run_limit=int(raw_config['dry_run_limit']),
@@ -290,7 +293,7 @@ if INCREMENTAL_ENABLED:
 CONFIDENCE_THRESHOLD = runtime_config.confidence_threshold
 ENABLE_REVIEW_QUEUE = runtime_config.enable_review_queue
 REVIEW_QUEUE_PATH = runtime_config.review_queue_path
-LINK_QUALITY_THRESHOLD = float(config.get('link_quality_threshold', 0.2))
+LINK_QUALITY_THRESHOLD = runtime_config.link_quality_threshold
 
 # Dry run settings
 DRY_RUN_LIMIT = runtime_config.dry_run_limit
@@ -565,7 +568,7 @@ def call_claude(
             else:
                 logger.error(f"❌ All {max_retries} attempts failed: {e}")
                 if dashboard:
-                    dashboard.add_error("claude_api_error", str(e))
+                    dashboard.add_error("ollama_api_error", str(e))
                 return ""
 
     return ""
