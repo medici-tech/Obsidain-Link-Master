@@ -36,12 +36,13 @@ Output: {"moc_category": "Technical & Automation", "concepts": [...]}
 
 ## Why Can't You Use Embedding Models Alone?
 
-❌ **Your current config.yaml has**:
+✅ **Default config.yaml now uses**:
 ```yaml
-ollama_model: Qwen3-Embedding-8B:Q8_0
+ollama_model: qwen2.5:3b
+embedding_model: nomic-embed-text:latest
 ```
 
-**This will fail** because:
+❌ **Avoid setting** `ollama_model` **to an embedding-only model** (e.g., `dengcao/Qwen3-Embedding-8B:Q8_0`) because:
 1. Embedding models cannot generate structured JSON responses
 2. They only output numerical vectors
 3. The system expects text analysis and categorization

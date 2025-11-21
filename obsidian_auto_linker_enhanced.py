@@ -83,7 +83,7 @@ DEFAULT_CONFIG = {
     'dry_run_limit': 10,
     'dry_run_interactive': True,
     'ollama_base_url': 'http://localhost:11434',
-    'ollama_model': 'Qwen3-Embedding-8B:Q8_0',
+    'ollama_model': 'qwen2.5:3b',
     'ollama_timeout': 300,
     'ollama_max_retries': 5,
     'ollama_temperature': 0.1,
