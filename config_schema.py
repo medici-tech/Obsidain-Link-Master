@@ -13,7 +13,7 @@ import os
 class OllamaConfig(BaseModel):
     """Ollama API configuration"""
     base_url: str = Field(default="http://localhost:11434", description="Ollama API base URL")
-    model: str = Field(default="Qwen3-Embedding-8B:Q8_0", description="Ollama model to use")
+    model: str = Field(default="qwen2.5:3b", description="Ollama model to use")
     timeout: int = Field(default=15, ge=5, le=300, description="API timeout in seconds")
     max_retries: int = Field(default=1, ge=0, le=5, description="Maximum retry attempts")
     temperature: float = Field(default=0.3, ge=0.0, le=2.0, description="Model temperature")
@@ -86,7 +86,7 @@ class ObsidianConfig(BaseModel):
 
     # Ollama configuration
     ollama_base_url: str = Field(default="http://localhost:11434")
-    ollama_model: str = Field(default="Qwen3-Embedding-8B:Q8_0")
+    ollama_model: str = Field(default="qwen2.5:3b")
     ollama_timeout: int = Field(default=15, ge=5, le=300)
     ollama_max_retries: int = Field(default=1, ge=0, le=5)
     ollama_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
@@ -95,7 +95,18 @@ class ObsidianConfig(BaseModel):
     # Features
     cache_enabled: bool = Field(default=True)
     resume_enabled: bool = Field(default=True)
+    incremental: bool = Field(default=False, description="Enable incremental processing")
+    incremental_tracker_file: str = Field(default=".file_hashes.json", description="Where to persist incremental hashes")
+    link_quality_threshold: float = Field(default=0.2, ge=0.0, le=1.0, description="Minimum sibling similarity score to keep")
+    max_cache_size_mb: int = Field(default=500, ge=1, description="Bounded cache size in MB")
+    max_cache_entries: int = Field(default=10000, ge=1, description="Bounded cache entry count")
     confirm_large_batches: bool = Field(default=False)
+    embedding_enabled: bool = Field(default=False, description="Enable embedding-based similarity")
+    embedding_base_url: str = Field(default="http://localhost:11434", description="Embedding API base URL")
+    embedding_model: str = Field(default="nomic-embed-text:latest", description="Embedding model to use")
+    embedding_similarity_threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="Minimum cosine similarity to keep")
+    embedding_top_k: int = Field(default=12, ge=1, le=50, description="How many embedding neighbors to consider")
+    knowledge_graph_file: str = Field(default="knowledge_graph.json", description="Where to export the knowledge graph edges")
 
     # Filtering
     exclude_patterns: List[str] = Field(default_factory=lambda: ["*.tmp", ".*", "_*"])
@@ -149,6 +160,14 @@ class ObsidianConfig(BaseModel):
         """Validate Ollama URL format"""
         if not v.startswith(('http://', 'https://')):
             raise ValueError("ollama_base_url must start with http:// or https://")
+        return v
+
+    @field_validator('embedding_base_url')
+    @classmethod
+    def validate_embedding_url(cls, v: str) -> str:
+        """Validate embedding base URL"""
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError("embedding_base_url must start with http:// or https://")
         return v
 
     @model_validator(mode='after')

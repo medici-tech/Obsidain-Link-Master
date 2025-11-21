@@ -38,6 +38,7 @@ class BoundedCache:
         self.access_times = {}
         self.entry_sizes = {}
         self._lock = threading.RLock()  # Reentrant lock for thread safety
+        self.evictions = 0
 
     def get_size_mb(self) -> float:
         """Calculate current cache size in MB"""
@@ -121,6 +122,8 @@ class BoundedCache:
         if lru_key in self.entry_sizes:
             del self.entry_sizes[lru_key]
 
+        self.evictions += 1
+
     def has(self, key: str) -> bool:
         """Check if key exists in cache"""
         with self._lock:
@@ -142,7 +145,8 @@ class BoundedCache:
                 'max_entries': self.max_entries,
                 'max_size_mb': self.max_size_mb,
                 'utilization_pct': (len(self.cache) / self.max_entries * 100) if self.max_entries > 0 else 0,
-                'size_utilization_pct': (self.get_size_mb() / self.max_size_mb * 100) if self.max_size_mb > 0 else 0
+                'size_utilization_pct': (self.get_size_mb() / self.max_size_mb * 100) if self.max_size_mb > 0 else 0,
+                'evictions': self.evictions,
             }
 
     def to_dict(self) -> Dict[str, Any]:
