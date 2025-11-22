@@ -1,3 +1,5 @@
+> Archived for historical reference only. The MIT License is no longer granted for this project; all rights are reserved by Medici Tech.
+
 MIT License
 
 Copyright (c) 2025 Obsidian Auto-Linker Contributors

@@ -2,6 +2,8 @@
 
 **Enhanced Obsidian Auto-Linker** - Get up and running in 5 minutes!
 
+> **Legal Notice:** © 2025 Medici Tech. All rights reserved. This project is not licensed for public use, modification, or distribution without explicit written permission.
+
 ## 📋 Prerequisites
 - Python 3.9+
 - 8GB+ RAM

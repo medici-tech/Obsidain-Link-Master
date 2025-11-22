@@ -459,7 +459,7 @@ See [CLAUDE.md](./CLAUDE.md) for comprehensive architecture documentation.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](./LICENSE).
+This project is not currently offered under a public license. By contributing, you grant Medici Tech the right to use, modify, and distribute your contributions under proprietary terms. Do not submit contributions if you require the project to remain under the MIT License or any other open-source license.
 
 ---
 
