@@ -208,19 +208,11 @@ def load_runtime_config(config_path: str = "config.yaml") -> RuntimeConfig:
         resume_enabled=bool(raw_config["resume_enabled"]),
         cache_enabled=bool(raw_config["cache_enabled"]),
         analytics_enabled=bool(raw_config["analytics_enabled"]),
-        embedding_enabled=bool(raw_config["embedding_enabled"]),
-        embedding_base_url=str(
-            raw_config.get("embedding_base_url")
-            or raw_config.get("ollama_base_url")
-            or DEFAULT_CONFIG["embedding_base_url"]
-        ),
-        embedding_model=str(raw_config["embedding_model"]),
-        embedding_similarity_threshold=float(raw_config["embedding_similarity_threshold"]),
-        embedding_top_k=int(raw_config["embedding_top_k"]),
         embedding_base_url=embedding_base_url,
         embedding_model=str(raw_config["embedding_model"]),
         embedding_similarity_threshold=float(raw_config["embedding_similarity_threshold"]),
         embedding_top_k=int(raw_config["embedding_top_k"]),
+        embedding_enabled=bool(raw_config["embedding_enabled"]),
         exclude_patterns=list(raw_config.get("exclude_patterns", [])),
         include_patterns=list(raw_config.get("include_patterns", [])),
         folder_whitelist=list(raw_config.get("folder_whitelist", [])),
