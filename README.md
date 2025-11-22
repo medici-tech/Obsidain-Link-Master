@@ -2,11 +2,12 @@
 
 ![CI Tests](https://github.com/medici-tech/Obsidain-Link-Master/workflows/Test%20Suite/badge.svg)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 An intelligent AI-powered system for automatically categorizing and linking Obsidian vault files using local LLM models with advanced quality control features.
 
 > **Why it exists:** Obsidian vaults grow messy quickly. The Auto-Linker scans your notes, proposes consistent MOC categories, and creates safe backlinks so you can focus on writing instead of bookkeeping.
+
+> **Copyright Notice:** © 2025 Medici Tech. All rights reserved. No license is granted for use, modification, or distribution without explicit written permission.
 
 ## 📚 Documentation Quick Links
 
