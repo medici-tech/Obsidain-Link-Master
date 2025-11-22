@@ -529,40 +529,90 @@ def verify_embedding_backend(base_url: str, model: str, timeout: int = 15) -> bo
         logger.info("   Ensure your embeddings host is running (e.g., `ollama serve`) and pull the model: ollama pull %s", model)
         return False
 
-# 12 MOC System (enhanced with custom support)
+# Standardized 30-category MOC system
+DEFAULT_MOC_CATEGORY = "Life Logistics & Problem-Solving"
 MOCS = {
-    "Client Acquisition": "📍 Client Acquisition MOC",
-    "Service Delivery": "📍 Service Delivery MOC",
-    "Revenue & Pricing": "📍 Revenue & Pricing MOC",
-    "Marketing & Content": "📍 Marketing & Content MOC",
-    "Garrison Voice Product": "📍 Garrison Voice Product MOC",
-    "Technical & Automation": "📍 Technical & Automation MOC",
-    "Business Operations": "📍 Business Operations MOC",
-    "Learning & Skills": "📍 Learning & Skills MOC",
-    "Personal Development": "📍 Personal Development MOC",
-    "Health & Fitness": "📍 Health & Fitness MOC",
-    "Finance & Money": "📍 Finance & Money MOC",
-    "Life & Misc": "📍 Life & Misc MOC"
+    "Strategic Vision & Planning": "📍 Strategic Vision & Planning MOC",
+    "Business Operations & Systems": "📍 Business Operations & Systems MOC",
+    "Revenue & Pricing Strategy": "📍 Revenue & Pricing Strategy MOC",
+    "Marketing & Audience Growth": "📍 Marketing & Audience Growth MOC",
+    "Sales & Client Acquisition": "📍 Sales & Client Acquisition MOC",
+    "Service Delivery & Quality": "📍 Service Delivery & Quality MOC",
+    "Product Development & Innovation": "📍 Product Development & Innovation MOC",
+    "AI, Data & Automation": "📍 AI, Data & Automation MOC",
+    "Engineering & Architecture": "📍 Engineering & Architecture MOC",
+    "Content Creation & Publishing": "📍 Content Creation & Publishing MOC",
+    "Brand & Positioning": "📍 Brand & Positioning MOC",
+    "Customer Success & Support": "📍 Customer Success & Support MOC",
+    "Partnerships & Business Development": "📍 Partnerships & Business Development MOC",
+    "Finance, Accounting & Capital": "📍 Finance, Accounting & Capital MOC",
+    "Investing & Wealth Building": "📍 Investing & Wealth Building MOC",
+    "Legal, Compliance & Risk": "📍 Legal, Compliance & Risk MOC",
+    "People, Leadership & Teams": "📍 People, Leadership & Teams MOC",
+    "Learning, Research & Skill Building": "📍 Learning, Research & Skill Building MOC",
+    "Career Strategy & Workflows": "📍 Career Strategy & Workflows MOC",
+    "Creativity, Writing & Storytelling": "📍 Creativity, Writing & Storytelling MOC",
+    "Personal Development & Mindset": "📍 Personal Development & Mindset MOC",
+    "Health, Fitness & Longevity": "📍 Health, Fitness & Longevity MOC",
+    "Mental Health & Resilience": "📍 Mental Health & Resilience MOC",
+    "Home, Family & Relationships": "📍 Home, Family & Relationships MOC",
+    "Life Logistics & Problem-Solving": "📍 Life Logistics & Problem-Solving MOC",
+    "Travel, Places & Experiences": "📍 Travel, Places & Experiences MOC",
+    "Tools, Apps & Workflows": "📍 Tools, Apps & Workflows MOC",
+    "Data, Analytics & Experimentation": "📍 Data, Analytics & Experimentation MOC",
+    "Community, Network & Influence": "📍 Community, Network & Influence MOC",
+    "Spirituality, Values & Reflection": "📍 Spirituality, Values & Reflection MOC"
 }
-
-# Add custom MOCs if defined
-if config.get('custom_mocs'):
-    MOCS.update(config['custom_mocs'])
 
 MOC_DESCRIPTIONS = {
-    "Client Acquisition": "Getting customers for Garrison Detail & Garrison Voice",
-    "Service Delivery": "Fulfilling client work and project execution",
-    "Revenue & Pricing": "Making money, pricing strategies, monetization",
-    "Marketing & Content": "Getting attention, content creation, brand building",
-    "Garrison Voice Product": "AI voice product development and features",
-    "Technical & Automation": "Tools, code, AI, n8n, automation systems",
-    "Business Operations": "Running the business day-to-day",
-    "Learning & Skills": "Courses, tutorials, research, skill acquisition",
-    "Personal Development": "Growth, habits, mindset, self-improvement",
-    "Health & Fitness": "Physical health, exercise, nutrition, wellness",
-    "Finance & Money": "Personal finance, investing, budgeting",
-    "Life & Misc": "Everything else that doesn't fit other categories"
+    "Strategic Vision & Planning": "Long-range goals, decision frameworks, and roadmap thinking.",
+    "Business Operations & Systems": "Processes, SOPs, and infrastructure that keep the business running.",
+    "Revenue & Pricing Strategy": "Monetization models, pricing experiments, and profitability levers.",
+    "Marketing & Audience Growth": "Campaigns, channels, and tactics to attract and nurture attention.",
+    "Sales & Client Acquisition": "Pipelines, outreach, and conversion systems for winning customers.",
+    "Service Delivery & Quality": "Execution playbooks, fulfillment workflows, and quality assurance.",
+    "Product Development & Innovation": "Feature shaping, user feedback, and iterative product discovery.",
+    "AI, Data & Automation": "Machine intelligence, data pipelines, and automation runbooks.",
+    "Engineering & Architecture": "Technical design, reliability practices, and platform decisions.",
+    "Content Creation & Publishing": "Editorial calendars, scripting, and production-ready assets.",
+    "Brand & Positioning": "Narratives, messaging pillars, and identity guidelines.",
+    "Customer Success & Support": "Onboarding, retention, and satisfaction programs for users.",
+    "Partnerships & Business Development": "Alliances, distribution deals, and joint ventures.",
+    "Finance, Accounting & Capital": "Cash flow, budgeting, fundraising, and financial controls.",
+    "Investing & Wealth Building": "Portfolio strategy, asset research, and capital allocation.",
+    "Legal, Compliance & Risk": "Contracts, policy guardrails, and risk mitigation plans.",
+    "People, Leadership & Teams": "Hiring, coaching, and culture design for high-performing teams.",
+    "Learning, Research & Skill Building": "Deliberate practice, study plans, and knowledge capture.",
+    "Career Strategy & Workflows": "Professional positioning, networking, and execution rituals.",
+    "Creativity, Writing & Storytelling": "Narrative craft, idea generation, and creative production.",
+    "Personal Development & Mindset": "Habits, reflection, and growth-focused routines.",
+    "Health, Fitness & Longevity": "Training, nutrition, and proactive wellness systems.",
+    "Mental Health & Resilience": "Stress management, emotional fitness, and recovery plans.",
+    "Home, Family & Relationships": "Household coordination, parenting, and relationship care.",
+    "Life Logistics & Problem-Solving": "Everyday chores, errands, and practical issue resolution.",
+    "Travel, Places & Experiences": "Trips, itineraries, and memorable explorations.",
+    "Tools, Apps & Workflows": "Software stacks, automation scripts, and productivity setups.",
+    "Data, Analytics & Experimentation": "Metrics, dashboards, and learning from experiments.",
+    "Community, Network & Influence": "Alliances, community building, and reputation assets.",
+    "Spirituality, Values & Reflection": "Beliefs, ethics, and contemplative practices."
 }
+
+
+def resolve_moc_category(category: Optional[str]) -> str:
+    """Ensure the MOC category matches a known key, otherwise fallback."""
+
+    if isinstance(category, str):
+        trimmed = category.strip()
+        if trimmed in MOCS:
+            return trimmed
+
+        # Try case-insensitive matching to be forgiving with AI output
+        lowered = trimmed.lower()
+        for key in MOCS:
+            if key.lower() == lowered:
+                return key
+
+    return DEFAULT_MOC_CATEGORY
 
 def load_progress() -> None:
     """Load progress from file using config_utils"""
@@ -868,13 +918,20 @@ def create_moc_note(moc_name: str, vault_path: str) -> None:
 
 > {description}
 
-## Overview
+## Purpose
 
-This is a Map of Content (MOC) that organizes all notes related to {moc_name.lower()}.
+This Map of Content keeps everything related to **{moc_name}** in one place so you can navigate quickly and spot emerging themes.
 
-## Key Concepts
+## How to Use
 
-(Concepts will be added as notes are processed)
+- Link new notes here when they clearly align with this category.
+- Summarize recurring questions or decisions inside this MOC.
+- Add quick jump lists (resources, workflows, experiments) as the vault grows.
+
+## Core Topics
+
+- Capture the most important ideas for {moc_name.lower()}.
+- Highlight reusable assets, checklists, and templates.
 
 ## Recent Conversations
 
@@ -886,7 +943,7 @@ This is a Map of Content (MOC) that organizes all notes related to {moc_name.low
 
 ---
 
-*This MOC was auto-generated. Add your own structure and notes as needed.*
+*This MOC was auto-generated. Customize sections to match your workflow.*
 """
 
     if not DRY_RUN:
@@ -927,7 +984,7 @@ def fast_dry_run_analysis(content: str, file_path: str) -> Dict[str, Any]:
         categories.append('Personal & Life')
 
     if not categories:
-        categories = ['Life & Misc']
+        categories = [DEFAULT_MOC_CATEGORY]
 
     return {
         'filename': filename,
@@ -982,7 +1039,7 @@ CONTENT:
 
 Return ONLY valid JSON in this exact format:
 {{
-  "moc_category": "Life & Misc",
+  "moc_category": "Life Logistics & Problem-Solving",
   "primary_topic": "Brief topic description",
   "hierarchical_tags": ["tag1", "tag2"],
   "key_concepts": ["concept1", "concept2", "concept3"],
@@ -991,7 +1048,7 @@ Return ONLY valid JSON in this exact format:
   "reasoning": "Brief explanation"
 }}
 
-Categories: Client Acquisition, Service Delivery, Revenue & Pricing, Marketing & Content, Garrison Voice Product, Technical & Automation, Business Operations, Learning & Skills, Personal Development, Health & Fitness, Finance & Money, Life & Misc
+Categories (must match exactly): Strategic Vision & Planning; Business Operations & Systems; Revenue & Pricing Strategy; Marketing & Audience Growth; Sales & Client Acquisition; Service Delivery & Quality; Product Development & Innovation; AI, Data & Automation; Engineering & Architecture; Content Creation & Publishing; Brand & Positioning; Customer Success & Support; Partnerships & Business Development; Finance, Accounting & Capital; Investing & Wealth Building; Legal, Compliance & Risk; People, Leadership & Teams; Learning, Research & Skill Building; Career Strategy & Workflows; Creativity, Writing & Storytelling; Personal Development & Mindset; Health, Fitness & Longevity; Mental Health & Resilience; Home, Family & Relationships; Life Logistics & Problem-Solving; Travel, Places & Experiences; Tools, Apps & Workflows; Data, Analytics & Experimentation; Community, Network & Influence; Spirituality, Values & Reflection
 
 Return ONLY the JSON object, no explanations or other text."""
 
@@ -1220,13 +1277,16 @@ def process_conversation(
             dashboard.add_activity(f"Failed: {filename}", success=False)
         return False
 
+    moc_category = resolve_moc_category(ai_result.get('moc_category'))
+    ai_result['moc_category'] = moc_category
+
     confidence = ai_result.get('confidence_score', 0)
     logger.info(f"  ✓ Confidence: {confidence:.0%}")
-    logger.info(f"  ✓ MOC: {ai_result.get('moc_category')}")
+    logger.info(f"  ✓ MOC: {moc_category}")
     logger.info(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
 
     logger.info(f"  ✓ Confidence: {confidence:.0%}")
-    logger.info(f"  ✓ MOC: {ai_result.get('moc_category')}")
+    logger.info(f"  ✓ MOC: {moc_category}")
     logger.info(f"  ✓ Reasoning: {ai_result.get('reasoning', 'N/A')[:80]}...")
 
     # Check confidence threshold
@@ -1244,7 +1304,6 @@ def process_conversation(
         analytics['low_confidence_files'] = analytics.get('low_confidence_files', 0) + 1
 
     # Track MOC distribution
-    moc_category = ai_result.get('moc_category', 'Life & Misc')
     analytics['moc_distribution'][moc_category] = analytics['moc_distribution'].get(moc_category, 0) + 1
 
     if dashboard:
@@ -1300,7 +1359,7 @@ def process_conversation(
                 analytics['knowledge_graph_edges'].append(edge)
 
     # Build footer sections
-    parent_moc = MOCS.get(moc_category, MOCS['Life & Misc'])
+    parent_moc = MOCS.get(moc_category, MOCS[DEFAULT_MOC_CATEGORY])
 
     metadata_section = f"""## 📊 METADATA
 
