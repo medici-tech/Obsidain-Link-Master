@@ -116,9 +116,9 @@ class ObsidianConfig(BaseModel):
 
     # Advanced
     parallel_processing_enabled: bool = Field(
-        default=False, description="Enable experimental parallel processing"
+        default=True, description="Enable experimental parallel processing"
     )
-    parallel_workers: int = Field(default=1, ge=1, le=16)
+    parallel_workers: int = Field(default=2, ge=1, le=16)
     max_retries: int = Field(default=1, ge=0, le=5)
 
     # Custom MOCs

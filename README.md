@@ -82,6 +82,9 @@ ollama pull qwen2.5:3b
 Edit `config.yaml` to point at your vault and preferred folders:
 ```yaml
 vault_path: /path/to/your/obsidian/vault
+confidence_threshold: 0.8
+parallel_workers: 2           # Default parallel processing (raise/lower as needed)
+ollama_timeout_seconds: 600   # Adjust for larger models
 backup_folder: _backups       # Where markdown backups are stored
 log_folder: _logs             # Contains processing.log for each run
 moc_folder: MOCs              # All generated MOC notes are written here
