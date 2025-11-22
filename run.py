@@ -187,7 +187,15 @@ def run_embedding_tests(base_url: str, model: str) -> None:
 def main(argv: Optional[List[str]] = None) -> None:
     args = parse_args(argv)
     config = load_yaml_config(str(args.config), default={})
+    ai_provider = str(config.get("ai_provider", "ollama")).lower()
+    embedding_enabled = bool(config.get("embedding_enabled"))
     base_url = config.get("ollama_url") or config.get("ollama_base_url", DEFAULT_BASE_URL)
+    embedding_base_url = (
+        config.get("embedding_base_url")
+        or config.get("ollama_url")
+        or config.get("ollama_base_url")
+        or DEFAULT_BASE_URL
+    )
     required_models = discover_required_models(config)
 
     vault_path = config.get("vault_path")
@@ -201,25 +209,34 @@ def main(argv: Optional[List[str]] = None) -> None:
         sys.exit(1)
 
     LOGGER.info("Using config: %s", args.config)
-    LOGGER.info("Ollama base URL: %s", base_url)
+    if ai_provider == "ollama" or embedding_enabled:
+        LOGGER.info("Ollama base URL: %s", base_url)
+    else:
+        LOGGER.info("Ollama startup skipped; AI provider set to %s", ai_provider)
 
     started_process: Optional[subprocess.Popen] = None
 
     try:
-        if not is_ollama_ready(base_url):
-            started_process = start_ollama_service()
-            if not wait_for_ollama(base_url):
-                raise RuntimeError("Ollama did not become ready in time")
+        needs_ollama = ai_provider == "ollama" or embedding_enabled
+
+        if needs_ollama:
+            if not is_ollama_ready(base_url):
+                started_process = start_ollama_service()
+                if not wait_for_ollama(base_url):
+                    raise RuntimeError("Ollama did not become ready in time")
+            else:
+                LOGGER.info("Ollama is already running")
+
+            ensure_models_available(base_url, required_models, args.skip_model_pulls)
+
+        if embedding_enabled:
+            embedding_model = config.get("embedding_model")
+            if not embedding_model:
+                raise RuntimeError("`embedding_model` must be set when embeddings are enabled")
+
+            run_embedding_tests(embedding_base_url, embedding_model)
         else:
-            LOGGER.info("Ollama is already running")
-
-        ensure_models_available(base_url, required_models, args.skip_model_pulls)
-
-        embedding_model = config.get("embedding_model")
-        if not embedding_model:
-            raise RuntimeError("`embedding_model` must be set in the configuration")
-
-        run_embedding_tests(base_url, embedding_model)
+            LOGGER.info("Embeddings disabled; skipping embedding verification")
 
         exit_code = run_pipeline(args.config)
     except Exception as exc:
