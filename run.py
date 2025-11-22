@@ -165,6 +165,25 @@ def run_pipeline(config_path: Path) -> int:
     return result.returncode
 
 
+def run_embedding_tests(base_url: str, model: str) -> None:
+    """Run embedding smoke tests and abort if they fail."""
+
+    command = [
+        sys.executable,
+        "scripts/test_embeddings.py",
+        "--base-url",
+        base_url,
+        "--model",
+        model,
+    ]
+    LOGGER.info("Running embedding verification for model %s", model)
+    result = subprocess.run(command)
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Embedding verification failed; aborting startup before running pipeline"
+        )
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     args = parse_args(argv)
     config = load_yaml_config(str(args.config), default={})
@@ -185,6 +204,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             LOGGER.info("Ollama is already running")
 
         ensure_models_available(base_url, required_models, args.skip_model_pulls)
+
+        embedding_model = config.get("embedding_model")
+        if not embedding_model:
+            raise RuntimeError("`embedding_model` must be set in the configuration")
+
+        run_embedding_tests(base_url, embedding_model)
 
         exit_code = run_pipeline(args.config)
     except Exception as exc:
