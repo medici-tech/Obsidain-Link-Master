@@ -115,6 +115,23 @@ cp config.yaml.example config.yaml
 
 6. **Create a Pull Request** on GitHub
 
+## Contributor Agreement (Required)
+
+Because this repository does not currently publish a project-wide license, **all contributors must assent to the `CONTRIBUTOR_AGREEMENT.md` prior to merging any pull request**. This ensures the project has the rights needed to use, modify, and redistribute your contributions.
+
+### Signature / Assent Flow
+1. **Read the agreement** at [`CONTRIBUTOR_AGREEMENT.md`](CONTRIBUTOR_AGREEMENT.md) before opening your pull request.
+2. **Record assent** by including the line `I agree to the Obsidian Auto-Linker Contributor License Agreement` in either:
+   - A dedicated comment on your pull request, **or**
+   - The pull request description.
+3. **Identify the assenting individual**:
+   - Use your legal name in the assent line, **or**
+   - If using a handle, add `Signed-by: Your Legal Name <email@example.com>` beneath the assent line.
+4. **One-time per contributor**: Once your assent is recorded and merged, you do not need to re-affirm it for subsequent contributions unless the agreement changes.
+5. **Enforcement**: Pull requests without a recorded assent may be blocked from merging. Maintainers will reference the recorded assent in the merge commit or PR notes to maintain an auditable record.
+
+Please review the full agreement in [`CONTRIBUTOR_AGREEMENT.md`](CONTRIBUTOR_AGREEMENT.md) to understand the rights you are granting.
+
 ## Coding Standards
 
 ### Python Style Guide
