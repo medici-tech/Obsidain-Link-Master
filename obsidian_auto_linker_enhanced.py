@@ -45,178 +45,16 @@ from config_utils import (
 )
 from live_dashboard import LiveDashboard
 from logger_config import get_logger, setup_logging
-from obsidian_link_master.configuration import DEFAULT_CONFIG, RuntimeConfig, load_runtime_config
+from obsidian_link_master.configuration import DEFAULT_CONFIG, RuntimeConfig
+from obsidian_link_master.settings import (
+    PARALLEL_EFFECTIVE_WORKERS,
+    PARALLEL_MODE_ACTIVE,
+    REQUESTED_PARALLEL_WORKERS,
+    runtime_config,
+)
 from scripts.cache_utils import BoundedCache
 from scripts.embedding_similarity import EmbeddingManager
 from scripts.incremental_processing import FileHashTracker, create_hash_tracker
-
-DEFAULT_CONFIG = {
-    'vault_path': str(Path('/Users/medici/Documents/MediciVault')),
-    'backup_folder': '_backups',
-    'dry_run': True,
-    'fast_dry_run': False,
-    'force_reprocess': False,
-    'max_backups': 5,
-    'max_siblings': 5,
-    'batch_size': 1,
-    'max_retries': 3,
-    'parallel_processing_enabled': False,
-    'parallel_workers': 1,
-    'file_ordering': 'recent',
-    'resume_enabled': True,
-    'cache_enabled': True,
-    'analytics_enabled': True,
-    'interactive_mode': True,
-    'embedding_enabled': False,
-    'embedding_base_url': 'http://localhost:11434',
-    'embedding_model': 'nomic-embed-text:latest',
-    'embedding_similarity_threshold': 0.7,
-    'embedding_top_k': 12,
-    'incremental_processing': True,
-    'incremental': True,
-    'max_cache_size_mb': 1000,
-    'max_cache_entries': 10000,
-    'incremental_tracker_file': '.incremental_tracker.json',
-    'confidence_threshold': 0.8,
-    'enable_review_queue': True,
-    'review_queue_path': 'reviews/',
-    'dry_run_limit': 10,
-    'dry_run_interactive': True,
-    'ollama_base_url': 'http://localhost:11434',
-    'ollama_model': 'qwen2.5:3b',
-    'ollama_timeout': 300,
-    'ollama_max_retries': 5,
-    'ollama_temperature': 0.1,
-    'ollama_max_tokens': 1024,
-    'ai_provider': 'ollama',
-    'claude_model': 'claude-sonnet-4-5-20250929',
-    'claude_max_tokens': 2048,
-    'claude_temperature': 0.1,
-    'claude_timeout': 60,
-    'knowledge_graph_file': 'knowledge_graph.json',
-}
-
-
-@dataclass
-class RuntimeConfig:
-    """Normalized runtime configuration loaded from disk and environment."""
-
-    vault_path: str
-    backup_folder: str
-    dry_run: bool
-    fast_dry_run: bool
-    force_reprocess: bool
-    max_backups: int
-    max_siblings: int
-    batch_size: int
-    max_retries: int
-    parallel_processing_enabled: bool
-    parallel_workers: int
-    file_ordering: str
-    resume_enabled: bool
-    cache_enabled: bool
-    analytics_enabled: bool
-    interactive_mode: bool
-    embedding_enabled: bool
-    embedding_base_url: str
-    embedding_model: str
-    embedding_similarity_threshold: float
-    embedding_top_k: int
-    incremental_processing: bool
-    incremental: bool
-    max_cache_size_mb: int
-    max_cache_entries: int
-    incremental_tracker_file: str
-    confidence_threshold: float
-    enable_review_queue: bool
-    review_queue_path: str
-    dry_run_limit: int
-    dry_run_interactive: bool
-    ollama_base_url: str
-    ollama_model: str
-    ollama_timeout: int
-    ollama_max_retries: int
-    ollama_temperature: float
-    ollama_max_tokens: int
-    ai_provider: str
-    claude_api_key: str
-    claude_model: str
-    claude_max_tokens: int
-    claude_temperature: float
-    claude_timeout: int
-    knowledge_graph_file: str
-
-
-def _load_runtime_config(config_path: str = 'config.yaml') -> RuntimeConfig:
-    """Load configuration from disk with sane defaults and validation."""
-
-    logger = get_logger(__name__)
-    raw_config = {**DEFAULT_CONFIG, **load_yaml_config(config_path, default={})}
-
-    vault_path = os.environ.get('OBSIDIAN_VAULT_PATH') or raw_config.get('vault_path')
-    if not vault_path:
-        vault_path = DEFAULT_CONFIG['vault_path']
-
-    if not validate_vault_path(vault_path, must_exist=False):
-        fallback = DEFAULT_CONFIG['vault_path']
-        logger.warning(
-            "Invalid vault path '%s'. Falling back to %s."
-            " Set OBSIDIAN_VAULT_PATH or update config.yaml to override.",
-            vault_path,
-            fallback,
-        )
-        vault_path = fallback
-
-    ensure_directory_exists(vault_path, create=True)
-    backup_folder = os.path.join(vault_path, raw_config.get('backup_folder', DEFAULT_CONFIG['backup_folder']))
-
-    return RuntimeConfig(
-        vault_path=vault_path,
-        backup_folder=backup_folder,
-        dry_run=bool(raw_config['dry_run']),
-        fast_dry_run=bool(raw_config['fast_dry_run']),
-        force_reprocess=bool(raw_config['force_reprocess']),
-        max_backups=int(raw_config['max_backups']),
-        max_siblings=int(raw_config['max_siblings']),
-        batch_size=int(raw_config['batch_size']),
-        max_retries=int(raw_config['max_retries']),
-        parallel_processing_enabled=bool(raw_config['parallel_processing_enabled']),
-        parallel_workers=int(raw_config['parallel_workers']),
-        file_ordering=str(raw_config['file_ordering']),
-        resume_enabled=bool(raw_config['resume_enabled']),
-        cache_enabled=bool(raw_config['cache_enabled']),
-        analytics_enabled=bool(raw_config['analytics_enabled']),
-        interactive_mode=bool(raw_config['interactive_mode']),
-        embedding_enabled=bool(raw_config['embedding_enabled']),
-        embedding_base_url=str(raw_config.get('embedding_base_url', raw_config['ollama_base_url'])),
-        embedding_model=str(raw_config['embedding_model']),
-        embedding_similarity_threshold=float(raw_config['embedding_similarity_threshold']),
-        embedding_top_k=int(raw_config['embedding_top_k']),
-        incremental_processing=bool(raw_config['incremental_processing']),
-        incremental=bool(raw_config['incremental']),
-        max_cache_size_mb=int(raw_config['max_cache_size_mb']),
-        max_cache_entries=int(raw_config['max_cache_entries']),
-        incremental_tracker_file=str(raw_config['incremental_tracker_file']),
-        confidence_threshold=float(raw_config['confidence_threshold']),
-        enable_review_queue=bool(raw_config['enable_review_queue']),
-        review_queue_path=str(raw_config['review_queue_path']),
-        dry_run_limit=int(raw_config['dry_run_limit']),
-        dry_run_interactive=bool(raw_config['dry_run_interactive']),
-        ollama_base_url=str(raw_config['ollama_base_url']),
-        ollama_model=str(raw_config['ollama_model']),
-        ollama_timeout=int(raw_config['ollama_timeout']),
-        ollama_max_retries=int(raw_config['ollama_max_retries']),
-        ollama_temperature=float(raw_config['ollama_temperature']),
-        ollama_max_tokens=int(raw_config['ollama_max_tokens']),
-        ai_provider=str(raw_config['ai_provider']).lower(),
-        claude_api_key=raw_config.get('claude_api_key') or os.environ.get('ANTHROPIC_API_KEY', ''),
-        claude_model=str(raw_config['claude_model']),
-        claude_max_tokens=int(raw_config['claude_max_tokens']),
-        claude_temperature=float(raw_config['claude_temperature']),
-        claude_timeout=int(raw_config['claude_timeout']),
-        knowledge_graph_file=str(raw_config['knowledge_graph_file']),
-    )
-
 
 @dataclass
 class ProcessingContext:
@@ -236,7 +74,6 @@ _BOOTSTRAPPED = False
 _BOOTSTRAP_LOCK = threading.Lock()
 
 # Load and normalize configuration once for the module
-runtime_config = _load_runtime_config()
 config: Dict[str, Any] = runtime_config.__dict__.copy()
 
 VAULT_PATH = runtime_config.vault_path
@@ -248,22 +85,20 @@ MAX_SIBLINGS = runtime_config.max_siblings
 BATCH_SIZE = runtime_config.batch_size
 MAX_RETRIES = runtime_config.max_retries
 PARALLEL_PROCESSING_ENABLED = runtime_config.parallel_processing_enabled
-PARALLEL_WORKERS = runtime_config.parallel_workers
-REQUESTED_PARALLEL_WORKERS = PARALLEL_WORKERS
+PARALLEL_WORKERS = PARALLEL_EFFECTIVE_WORKERS
 
 # Parallel processing configuration
 if not PARALLEL_PROCESSING_ENABLED:
-    if PARALLEL_WORKERS > 1:
+    if REQUESTED_PARALLEL_WORKERS > 1:
         logger.info(
             "parallel_processing_enabled is False; ignoring parallel_workers=%s and running sequentially",
-            PARALLEL_WORKERS,
+            REQUESTED_PARALLEL_WORKERS,
         )
     PARALLEL_WORKERS = 1
+elif PARALLEL_MODE_ACTIVE:
+    logger.info("✅ Parallel processing enabled: using %s workers", PARALLEL_WORKERS)
 else:
-    if PARALLEL_WORKERS > 1:
-        logger.info("✅ Parallel processing enabled: using %s workers", PARALLEL_WORKERS)
-    else:
-        logger.info("Parallel processing enabled but configured for a single worker")
+    logger.info("Parallel processing enabled but configured for a single worker")
 
 FILE_ORDERING = runtime_config.file_ordering
 RESUME_ENABLED = runtime_config.resume_enabled
@@ -290,7 +125,7 @@ if INCREMENTAL_ENABLED:
 CONFIDENCE_THRESHOLD = runtime_config.confidence_threshold
 ENABLE_REVIEW_QUEUE = runtime_config.enable_review_queue
 REVIEW_QUEUE_PATH = runtime_config.review_queue_path
-LINK_QUALITY_THRESHOLD = float(config.get('link_quality_threshold', 0.2))
+LINK_QUALITY_THRESHOLD = runtime_config.link_quality_threshold
 
 # Dry run settings
 DRY_RUN_LIMIT = runtime_config.dry_run_limit
@@ -565,7 +400,7 @@ def call_claude(
             else:
                 logger.error(f"❌ All {max_retries} attempts failed: {e}")
                 if dashboard:
-                    dashboard.add_error("claude_api_error", str(e))
+                    dashboard.add_error("ollama_api_error", str(e))
                 return ""
 
     return ""
@@ -735,44 +570,27 @@ def load_progress() -> None:
         return
 
     progress_file = config.get('progress_file', '.processing_progress.json')
-    if os.path.exists(progress_file):
-        try:
-            with open(progress_file, 'r') as f:
-                data = json.load(f)
-                if data and isinstance(data, dict):
-                    progress_data['processed_files'] = set(data.get('processed_files', []))
-                    progress_data['failed_files'] = set(data.get('failed_files', []))
-                    progress_data['current_batch'] = data.get('current_batch', 0)
-                    progress_data['file_stages'] = data.get('file_stages', {})
-                    logger.info(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
-                    if progress_data['file_stages']:
-                        stages_summary = {}
-                        for filepath, stage_data in progress_data['file_stages'].items():
-                            stage = stage_data.get('stage', 'unknown')
-                            stages_summary[stage] = stages_summary.get(stage, 0) + 1
-                        logger.info(f"   📋 File stages: {dict(stages_summary)}")
-                else:
-                    progress_data['processed_files'] = set()
-                    progress_data['failed_files'] = set()
-                    progress_data['current_batch'] = 0
-        except (json.JSONDecodeError, ValueError):
-            progress_data['processed_files'] = set()
-            progress_data['failed_files'] = set()
-            progress_data['current_batch'] = 0
-        except Exception as e:
-            logger.warning(f"⚠️  Could not load progress file: {e}")
     data = load_json_file(progress_file, default={})
 
     if data and isinstance(data, dict):
         progress_data['processed_files'] = set(data.get('processed_files', []))
         progress_data['failed_files'] = set(data.get('failed_files', []))
         progress_data['current_batch'] = data.get('current_batch', 0)
+        progress_data['file_stages'] = data.get('file_stages', {})
+
         if progress_data['processed_files']:
             logger.info(f"📂 Loaded progress: {len(progress_data['processed_files'])} files already processed")
+        if progress_data['file_stages']:
+            stages_summary: Dict[str, int] = {}
+            for filepath, stage_data in progress_data['file_stages'].items():
+                stage = stage_data.get('stage', 'unknown')
+                stages_summary[stage] = stages_summary.get(stage, 0) + 1
+            logger.info(f"   📋 File stages: {dict(stages_summary)}")
     else:
         progress_data['processed_files'] = set()
         progress_data['failed_files'] = set()
         progress_data['current_batch'] = 0
+        progress_data['file_stages'] = {}
 
 def save_progress() -> None:
     """Save progress to file using config_utils"""
@@ -781,7 +599,10 @@ def save_progress() -> None:
 
     progress_file = config.get('progress_file', '.processing_progress.json')
     try:
-        with open(progress_file, 'w') as f:
+        progress_dir = os.path.dirname(progress_file)
+        if progress_dir:
+            os.makedirs(progress_dir, exist_ok=True)
+        with open(progress_file, 'w', encoding='utf-8') as f:
             json.dump({
                 'processed_files': list(progress_data['processed_files']),
                 'failed_files': list(progress_data['failed_files']),
@@ -1252,8 +1073,8 @@ def backup_file(file_path: str) -> None:
 
         # Verify backup
         if config.get('backup_verification', True):
-            with open(file_path, 'r') as original:
-                with open(backup_path, 'r') as backup:
+            with open(file_path, 'r', encoding='utf-8') as original:
+                with open(backup_path, 'r', encoding='utf-8') as backup:
                     if original.read() != backup.read():
                         raise Exception("Backup verification failed")
 
@@ -1660,7 +1481,7 @@ def generate_analytics_report() -> None:
 
     # Save analytics
     analytics_file = config.get('analytics_file', 'processing_analytics.json')
-    with open(analytics_file, 'w') as f:
+    with open(analytics_file, 'w', encoding='utf-8') as f:
         json.dump(analytics, f, indent=2, default=str)
 
     # Persist knowledge graph edges for downstream visualization
@@ -1753,7 +1574,7 @@ def generate_analytics_report() -> None:
 </html>
 """
 
-    with open('analytics_report.html', 'w') as f:
+    with open('analytics_report.html', 'w', encoding='utf-8') as f:
         f.write(html_report)
 
     logger.info(f"📊 Analytics report saved to: analytics_report.html")
@@ -1882,7 +1703,7 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     logger.info("=" * 60)
     logger.info("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
     # Declare global variables for interactive mode
-    global DRY_RUN, BATCH_SIZE, OLLAMA_MODEL, FILE_ORDERING
+    global DRY_RUN, BATCH_SIZE, OLLAMA_MODEL, FILE_ORDERING, EMBEDDING_ENABLED
 
     logger.info("=" * 60)
     logger.info("🚀 ENHANCED OBSIDIAN VAULT AUTO-LINKER")
@@ -1962,8 +1783,11 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
     if EMBEDDING_ENABLED:
         logger.info("🔍 Probing embedding backend at %s...", EMBEDDING_BASE_URL)
         if not verify_embedding_backend(EMBEDDING_BASE_URL, EMBEDDING_MODEL):
-            logger.error("Embedding check failed; start the embeddings host or set embedding_enabled: false in config.yaml")
-            return
+            logger.warning(
+                "Embedding check failed; disabling embedding pipeline for this run."
+                " Start the embeddings host or set embedding_enabled: false in config.yaml to silence this."
+            )
+            EMBEDDING_ENABLED = False
 
     # Scan vault
     logger.info("🔍 Scanning vault...")
@@ -2243,7 +2067,14 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
                 last_file_name = current_file
 
                 try:
-                    _, success, skip_reason = future.result()
+                    _, success, skip_reason, thread_name = future.result()
+                    logger.debug(
+                        "Thread %s finished %s (success=%s, reason=%s)",
+                        thread_name,
+                        current_file,
+                        success,
+                        skip_reason,
+                    )
                     if success and skip_reason != 'unchanged':
                         processed_count += 1
                 except Exception as e:

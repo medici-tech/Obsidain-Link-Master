@@ -83,7 +83,7 @@ Edit `config.yaml`:
 ```yaml
 vault_path: /path/to/your/obsidian/vault
 confidence_threshold: 0.8
-parallel_workers: 1           # Increase to enable parallel processing
+parallel_workers: 2           # Default parallel processing (raise/lower as needed)
 ollama_timeout_seconds: 600   # Adjust for larger models
 ```
 
