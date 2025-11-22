@@ -190,6 +190,16 @@ def main(argv: Optional[List[str]] = None) -> None:
     base_url = config.get("ollama_url") or config.get("ollama_base_url", DEFAULT_BASE_URL)
     required_models = discover_required_models(config)
 
+    vault_path = config.get("vault_path")
+    if not vault_path:
+        LOGGER.error("`vault_path` must be set to a valid Obsidian vault directory")
+        sys.exit(1)
+
+    vault_dir = Path(vault_path)
+    if not vault_dir.is_dir():
+        LOGGER.error("Configured `vault_path` is not a directory: %s", vault_dir)
+        sys.exit(1)
+
     LOGGER.info("Using config: %s", args.config)
     LOGGER.info("Ollama base URL: %s", base_url)
 
