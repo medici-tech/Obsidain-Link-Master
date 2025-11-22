@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from config_utils import ensure_directory_exists, load_yaml_config, validate_vault_path
 from logger_config import get_logger
@@ -22,6 +22,10 @@ logger = get_logger(__name__)
 DEFAULT_CONFIG: Dict[str, Any] = {
     "vault_path": str(Path("/Users/medici/Documents/MediciVault")),
     "backup_folder": "_backups",
+    "log_folder": "_logs",
+    "moc_folder": "MOCs",
+    "watch_folder": "Conversations",
+    "watch_mode": False,
     "dry_run": True,
     "fast_dry_run": False,
     "force_reprocess": False,
@@ -40,6 +44,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "embedding_model": "nomic-embed-text:latest",
     "embedding_similarity_threshold": 0.7,
     "embedding_top_k": 12,
+    "exclude_patterns": ["*.tmp", ".*", "_*"],
+    "include_patterns": ["*.md"],
+    "folder_whitelist": [],
+    "folder_blacklist": ["_backups", ".git", "Templates"],
     "generate_report": False,
     "interactive_mode": True,
     "incremental_processing": True,
@@ -53,8 +61,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "review_queue_path": "reviews/",
     "dry_run_limit": 10,
     "dry_run_interactive": True,
-    "ollama_base_url": "http://localhost:11434",
-    "ollama_model": "qwen2.5:3b",
+    "ollama_url": "http://localhost:11434",
+    "analysis_model": "qwen2.5:3b",
     "ollama_timeout": 300,
     "ollama_max_retries": 5,
     "ollama_temperature": 0.1,
@@ -74,6 +82,11 @@ class RuntimeConfig:
 
     vault_path: str
     backup_folder: str
+    log_folder: str
+    log_file: str
+    moc_folder: str
+    watch_folder: str
+    watch_mode: bool
     dry_run: bool
     fast_dry_run: bool
     force_reprocess: bool
@@ -92,6 +105,10 @@ class RuntimeConfig:
     embedding_model: str
     embedding_similarity_threshold: float
     embedding_top_k: int
+    exclude_patterns: List[str]
+    include_patterns: List[str]
+    folder_whitelist: List[str]
+    folder_blacklist: List[str]
     generate_report: bool
     interactive_mode: bool
     incremental_processing: bool
@@ -107,6 +124,8 @@ class RuntimeConfig:
     dry_run_interactive: bool
     ollama_base_url: str
     ollama_model: str
+    ollama_url: str
+    analysis_model: str
     ollama_timeout: int
     ollama_max_retries: int
     ollama_temperature: float
@@ -141,10 +160,41 @@ def load_runtime_config(config_path: str = "config.yaml") -> RuntimeConfig:
 
     ensure_directory_exists(vault_path, create=True)
     backup_folder = os.path.join(vault_path, raw_config.get("backup_folder", DEFAULT_CONFIG["backup_folder"]))
+    log_folder = os.path.join(vault_path, raw_config.get("log_folder", DEFAULT_CONFIG["log_folder"]))
+    moc_folder = os.path.join(vault_path, raw_config.get("moc_folder", DEFAULT_CONFIG["moc_folder"]))
+    watch_folder = os.path.join(vault_path, raw_config.get("watch_folder", DEFAULT_CONFIG["watch_folder"]))
+
+    ensure_directory_exists(backup_folder, create=True)
+    ensure_directory_exists(log_folder, create=True)
+    ensure_directory_exists(moc_folder, create=True)
+    ensure_directory_exists(watch_folder, create=True)
+
+    log_file = os.path.join(log_folder, raw_config.get("log_file", "processing.log"))
+
+    ollama_url = str(
+        raw_config.get("ollama_url")
+        or raw_config.get("ollama_base_url")
+        or DEFAULT_CONFIG["ollama_url"]
+    )
+    analysis_model = str(
+        raw_config.get("analysis_model")
+        or raw_config.get("ollama_model")
+        or DEFAULT_CONFIG["analysis_model"]
+    )
+    embedding_base_url = str(
+        raw_config.get("embedding_base_url")
+        or raw_config.get("ollama_url")
+        or DEFAULT_CONFIG["ollama_url"]
+    )
 
     return RuntimeConfig(
         vault_path=vault_path,
         backup_folder=backup_folder,
+        log_folder=log_folder,
+        log_file=log_file,
+        moc_folder=moc_folder,
+        watch_folder=watch_folder,
+        watch_mode=bool(raw_config.get("watch_mode", DEFAULT_CONFIG["watch_mode"])),
         dry_run=bool(raw_config["dry_run"]),
         fast_dry_run=bool(raw_config["fast_dry_run"]),
         force_reprocess=bool(raw_config["force_reprocess"]),
@@ -167,6 +217,14 @@ def load_runtime_config(config_path: str = "config.yaml") -> RuntimeConfig:
         embedding_model=str(raw_config["embedding_model"]),
         embedding_similarity_threshold=float(raw_config["embedding_similarity_threshold"]),
         embedding_top_k=int(raw_config["embedding_top_k"]),
+        embedding_base_url=embedding_base_url,
+        embedding_model=str(raw_config["embedding_model"]),
+        embedding_similarity_threshold=float(raw_config["embedding_similarity_threshold"]),
+        embedding_top_k=int(raw_config["embedding_top_k"]),
+        exclude_patterns=list(raw_config.get("exclude_patterns", [])),
+        include_patterns=list(raw_config.get("include_patterns", [])),
+        folder_whitelist=list(raw_config.get("folder_whitelist", [])),
+        folder_blacklist=list(raw_config.get("folder_blacklist", [])),
         generate_report=bool(raw_config.get("generate_report", DEFAULT_CONFIG["generate_report"])),
         interactive_mode=bool(raw_config["interactive_mode"]),
         incremental_processing=bool(raw_config["incremental_processing"]),
@@ -180,8 +238,10 @@ def load_runtime_config(config_path: str = "config.yaml") -> RuntimeConfig:
         review_queue_path=str(raw_config["review_queue_path"]),
         dry_run_limit=int(raw_config["dry_run_limit"]),
         dry_run_interactive=bool(raw_config["dry_run_interactive"]),
-        ollama_base_url=str(raw_config["ollama_base_url"]),
-        ollama_model=str(raw_config["ollama_model"]),
+        ollama_base_url=ollama_url,
+        ollama_model=analysis_model,
+        ollama_url=ollama_url,
+        analysis_model=analysis_model,
         ollama_timeout=int(raw_config["ollama_timeout"]),
         ollama_max_retries=int(raw_config["ollama_max_retries"]),
         ollama_temperature=float(raw_config["ollama_temperature"]),

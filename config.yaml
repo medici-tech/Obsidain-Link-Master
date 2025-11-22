@@ -1,3 +1,12 @@
+# Core paths
+vault_path: /Users/medici/Documents/MediciVault
+backup_folder: _backups
+log_folder: _logs
+moc_folder: MOCs
+watch_folder: Conversations
+
+# Processing behavior
+watch_mode: false
 batch_size: 1
 dry_run: True
 fast_dry_run: True
@@ -12,6 +21,35 @@ claude_model: claude-3-5-sonnet-20241022
 claude_max_tokens: 2048
 claude_temperature: 0.1
 claude_timeout: 60
+dry_run: true
+fast_dry_run: true
+force_reprocess: false
+max_backups: 5
+max_siblings: 5
+max_retries: 3
+file_ordering: 'recent'
+resume_enabled: true
+cache_enabled: true
+analytics_enabled: true
+incremental_processing: true
+incremental: true
+max_cache_size_mb: 1000
+max_cache_entries: 10000
+incremental_tracker_file: .incremental_tracker.json
+confidence_threshold: 0.8
+link_quality_threshold: 0.2
+enable_review_queue: true
+review_queue_path: reviews/
+dry_run_limit: 10
+dry_run_interactive: true
+
+# Models
+ollama_url: http://localhost:11434
+analysis_model: qwen2.5:3b
+ollama_timeout: 300
+ollama_max_retries: 5
+ollama_temperature: 0.1
+ollama_max_tokens: 1024
 embedding_enabled: true
 embedding_base_url: http://localhost:11434
 embedding_model: nomic-embed-text:latest
@@ -23,3 +61,25 @@ vault_path: /Users/medici/Documents/MediciVault
 generate_report: false
 parallel_processing_enabled: true
 parallel_workers: 2
+ai_provider: ollama
+claude_model: claude-3-5-sonnet-20241022
+claude_max_tokens: 2048
+claude_temperature: 0.1
+claude_timeout: 60
+knowledge_graph_file: knowledge_graph.json
+
+# Parallelism
+parallel_processing_enabled: false
+parallel_workers: 1
+
+# Filtering
+exclude_patterns:
+  - "*.tmp"
+  - ".*"
+  - "_*"
+include_patterns:
+  - "*.md"
+folder_blacklist:
+  - "_backups"
+  - ".git"
+  - "Templates"
