@@ -46,9 +46,13 @@ def setup_logging(log_level: str = "INFO", log_file: str = "obsidian_linker.log"
     # File handler (for detailed logs)
     if enable_file_logging:
         try:
+            log_path = Path(log_file)
+            if log_path.parent:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+
             # Rotating file handler (max 10MB, keep 5 backups)
             file_handler = RotatingFileHandler(
-                log_file,
+                log_path,
                 maxBytes=10 * 1024 * 1024,  # 10MB
                 backupCount=5,
                 encoding='utf-8'

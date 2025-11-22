@@ -49,6 +49,7 @@ nano config.yaml
 - **Start with dry run mode to test configuration**
 - **Review confidence scores before switching to real processing**
 - **Check the `reviews/` directory for flagged files**
+- **Backups live in `_backups/`, logs in `_logs/processing.log`, and generated MOCs in `MOCs/`**
 
 ## 📚 Documentation
 

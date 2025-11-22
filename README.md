@@ -79,16 +79,28 @@ ollama pull qwen2.5:3b
 ```
 
 ### 3) Configure your vault
-Edit `config.yaml`:
+Edit `config.yaml` to point at your vault and preferred folders:
 ```yaml
 vault_path: /path/to/your/obsidian/vault
-confidence_threshold: 0.8
-parallel_workers: 1           # Increase to enable parallel processing
-ollama_timeout_seconds: 600   # Adjust for larger models
+backup_folder: _backups       # Where markdown backups are stored
+log_folder: _logs             # Contains processing.log for each run
+moc_folder: MOCs              # All generated MOC notes are written here
+watch_folder: Conversations   # Source folder monitored for new inputs
+
+watch_mode: false             # Enable to continuously monitor the watch folder
+batch_size: 1
+dry_run: true
+
+ollama_url: http://localhost:11434
+analysis_model: qwen2.5:3b
+embedding_model: nomic-embed-text:latest
 ```
 
 ### 4) Run the application
 ```bash
+# Single-run helper
+python scripts/auto_link_vault.py
+
 # Preferred packaged CLI
 obsidian-link-master --config config.yaml --dashboard
 obsidian-link-master --config config.yaml --non-interactive  # headless run
@@ -105,7 +117,8 @@ python run_with_dashboard.py --config config.yaml
 
 - **Caching & Incremental Runs**: Enabled by default; caches hashes and responses to skip unchanged files.
 - **Parallelism**: Set `parallel_workers` in `config.yaml` or pass `--parallel-workers` to the CLI.
-- **Backups**: Automatic backups occur before modifications; keep `backup_path` pointing to safe storage.
+- **Backups & logs**: Backups are written to `_backups/` and logs to `_logs/processing.log` inside your vault.
+- **MOCs & inputs**: Generated MOCs are placed under `MOCs/`, and the tool watches `Conversations/` for new conversation files by default.
 - **HTML analytics**: Disabled by default; set `generate_report: true` in `config.yaml` if you need standalone reports.
 
 ## 📁 File Structure

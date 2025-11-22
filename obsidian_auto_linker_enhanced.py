@@ -78,6 +78,11 @@ config: Dict[str, Any] = runtime_config.__dict__.copy()
 
 VAULT_PATH = runtime_config.vault_path
 BACKUP_FOLDER = runtime_config.backup_folder
+LOG_FILE = runtime_config.log_file
+LOG_FOLDER = runtime_config.log_folder
+MOC_FOLDER = runtime_config.moc_folder
+WATCH_MODE = runtime_config.watch_mode
+WATCH_FOLDER = runtime_config.watch_folder
 DRY_RUN = runtime_config.dry_run
 FAST_DRY_RUN = runtime_config.fast_dry_run
 MAX_BACKUPS = runtime_config.max_backups
@@ -852,7 +857,9 @@ def get_all_notes(vault_path: str) -> Dict[str, str]:
     """Get all note titles with preview content"""
     notes = {}
     for root, dirs, files in os.walk(vault_path):
-        if config.get('backup_folder', '_backups') in root:
+        root_path = Path(root)
+        backup_path = Path(BACKUP_FOLDER)
+        if backup_path == root_path or backup_path in root_path.parents:
             continue
         for file in files:
             if file.endswith('.md') and should_process_file(os.path.join(root, file)):
@@ -876,7 +883,9 @@ def load_note_corpus(vault_path: str, *, include_content: bool = True) -> Dict[s
 
     corpus: Dict[str, str] = {}
     for root, _, files in os.walk(vault_path):
-        if config.get('backup_folder', '_backups') in root:
+        root_path = Path(root)
+        backup_path = Path(BACKUP_FOLDER)
+        if backup_path == root_path or backup_path in root_path.parents:
             continue
 
         for file in files:
@@ -907,7 +916,9 @@ class ObsidianAutoLinker:
 def create_moc_note(moc_name: str, vault_path: str) -> None:
     """Create MOC note if it doesn't exist"""
     moc_filename = MOCS[moc_name].replace('📍 ', '') + '.md'
-    moc_path = os.path.join(vault_path, moc_filename)
+    moc_dir = Path(MOC_FOLDER or vault_path)
+    ensure_directory_exists(str(moc_dir), create=True)
+    moc_path = moc_dir / moc_filename
 
     if os.path.exists(moc_path):
         return
@@ -949,7 +960,7 @@ This Map of Content keeps everything related to **{moc_name}** in one place so y
     if not DRY_RUN:
         with open(moc_path, 'w', encoding='utf-8') as f:
             f.write(content)
-        logger.info(f"  ✅ Created MOC: {moc_filename}")
+        logger.info(f"  ✅ Created MOC: {moc_path}")
 
 def fast_dry_run_analysis(content: str, file_path: str) -> Dict[str, Any]:
     """Fast dry run analysis without AI - just basic structure analysis"""
@@ -1732,7 +1743,7 @@ def bootstrap_runtime(log_level: str = "INFO") -> RuntimeConfig:
 
     with _BOOTSTRAP_LOCK:
         if not _BOOTSTRAPPED:
-            setup_logging(log_level=log_level)
+            setup_logging(log_level=log_level, log_file=LOG_FILE)
             logger.info(
                 "Runtime bootstrap complete (vault=%s, parallel=%s, dashboard=%s)",
                 VAULT_PATH,
@@ -1881,10 +1892,14 @@ def main(enable_dashboard: bool = False, dashboard_update_interval: int = 15) ->
         create_moc_note(moc_name, VAULT_PATH)
 
     # Find conversation files
+    search_root = WATCH_FOLDER if os.path.exists(WATCH_FOLDER) else VAULT_PATH
     logger.info("\n🔎 Finding conversation files...")
+    logger.info("   Input folder: %s", search_root)
     all_files = []
-    for root, dirs, files in os.walk(VAULT_PATH):
-        if config.get('backup_folder', '_backups') in root:
+    for root, dirs, files in os.walk(search_root):
+        root_path = Path(root)
+        backup_path = Path(BACKUP_FOLDER)
+        if backup_path == root_path or backup_path in root_path.parents:
             continue
         for file in files:
             if file.endswith('.md') and not file.startswith(('📍', 'MOC')):

@@ -106,6 +106,7 @@ def discover_required_models(config: dict) -> List[str]:
 
     ai_provider = str(config.get("ai_provider", "ollama")).lower()
     candidate_keys = [
+        "analysis_model",
         "ollama_model",
         "primary_ollama_model",
         "secondary_ollama_model",
@@ -167,7 +168,7 @@ def run_pipeline(config_path: Path) -> int:
 def main(argv: Optional[List[str]] = None) -> None:
     args = parse_args(argv)
     config = load_yaml_config(str(args.config), default={})
-    base_url = config.get("ollama_base_url", DEFAULT_BASE_URL)
+    base_url = config.get("ollama_url") or config.get("ollama_base_url", DEFAULT_BASE_URL)
     required_models = discover_required_models(config)
 
     LOGGER.info("Using config: %s", args.config)
