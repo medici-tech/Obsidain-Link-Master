@@ -35,6 +35,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         description="Run the Obsidian Auto-Linker with auto-started Ollama",
     )
     parser.add_argument(
+        "--dashboard",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable the live terminal dashboard (default: enabled)",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=DEFAULT_CONFIG,
@@ -155,14 +161,26 @@ def ensure_models_available(base_url: str, required_models: Iterable[str], skip_
         pull_model(model)
 
 
-def run_pipeline(config_path: Path) -> int:
+def run_pipeline(config_path: Path, enable_dashboard: bool) -> int:
     """Invoke the main pipeline script using the provided config."""
-    env = os.environ.copy()
-    env.setdefault("OBSIDIAN_LINK_MASTER_CONFIG", str(config_path))
-    command = [sys.executable, "obsidian_auto_linker_enhanced.py"]
-    LOGGER.info("Launching pipeline with %s", config_path)
-    result = subprocess.run(command, env=env)
-    return result.returncode
+
+    # Ensure the pipeline loads the intended configuration file
+    os.environ.setdefault("OBSIDIAN_LINK_MASTER_CONFIG", str(config_path))
+
+    LOGGER.info(
+        "Launching pipeline with %s (dashboard=%s)",
+        config_path,
+        "enabled" if enable_dashboard else "disabled",
+    )
+
+    try:
+        import obsidian_auto_linker_enhanced as pipeline
+
+        pipeline.main(enable_dashboard=enable_dashboard)
+        return 0
+    except Exception as exc:  # noqa: BLE001 - surface pipeline failures
+        LOGGER.error("Pipeline execution failed: %s", exc)
+        return 1
 
 
 def run_embedding_tests(base_url: str, model: str) -> None:
@@ -238,7 +256,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         else:
             LOGGER.info("Embeddings disabled; skipping embedding verification")
 
-        exit_code = run_pipeline(args.config)
+        exit_code = run_pipeline(args.config, enable_dashboard=args.dashboard)
     except Exception as exc:
         LOGGER.error("Launcher failed: %s", exc)
         exit_code = 1
